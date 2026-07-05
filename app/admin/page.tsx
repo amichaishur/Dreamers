@@ -6,7 +6,7 @@ import StarField from "@/components/StarField";
 import { useLang } from "@/lib/i18n";
 import {
   listProfiles, setUserStatus, setUserRole, removeUser, DbProfile,
-  listInvitations, createInvitation, revokeInvitation, createInviteCode, Invitation,
+  listInvitations, createInvitation, setInvitationRole, revokeInvitation, createInviteCode, Invitation,
 } from "@/lib/supabase/data";
 import { initialsFrom } from "@/lib/format";
 
@@ -101,7 +101,7 @@ function InviteSheet({ onClose }: { onClose: () => void }) {
   const [method, setMethod] = useState<"email" | "link">("email");
 
   const [email, setEmail] = useState("");
-  const [invites, setInvites] = useState<Invitation[]>([]);
+  const [asAdmin, setAsAdmin] = useState(false);
   const [emailBusy, setEmailBusy] = useState(false);
   const [emailMsg, setEmailMsg] = useState<"added" | "exists" | null>(null);
 
@@ -111,21 +111,17 @@ function InviteSheet({ onClose }: { onClose: () => void }) {
   const [code, setCode] = useState<string | null>(null);
   const [copied, setCopied] = useState<"" | "code" | "msg">("");
 
-  const loadInvites = useCallback(() => { listInvitations().then(setInvites).catch(() => {}); }, []);
-  useEffect(() => { loadInvites(); }, [loadInvites]);
-
   const addEmail = async () => {
     const clean = email.trim();
     if (!clean || emailBusy) return;
     setEmailBusy(true); setEmailMsg(null);
     try {
-      const r = await createInvitation(clean);
+      const r = await createInvitation(clean, asAdmin ? "admin" : "user");
       setEmailMsg(r);
-      if (r === "added") { setEmail(""); loadInvites(); }
+      if (r === "added") { setEmail(""); setAsAdmin(false); }
     } catch { /* ignore */ }
     setEmailBusy(false);
   };
-  const revoke = async (id: string) => { try { await revokeInvitation(id); loadInvites(); } catch { /* ignore */ } };
   const gen = async () => {
     if (codeBusy) return;
     setCodeBusy(true);
@@ -158,37 +154,30 @@ function InviteSheet({ onClose }: { onClose: () => void }) {
         {method === "email" ? (
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(236,231,250,0.78)", marginBottom: 9 }}>{t("is.email")}</div>
-            <div style={{ display: "flex", gap: 9, marginBottom: 10 }}>
+            <div style={{ display: "flex", gap: 9, marginBottom: 12 }}>
               <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("is.emailPh")} type="email" style={field} />
               <button onClick={addEmail} disabled={emailBusy || !email.trim()} style={{ flex: "0 0 auto", height: 46, padding: "0 16px", borderRadius: 12, border: "none", cursor: "pointer", fontSize: 13.5, fontWeight: 700, color: "#fff", background: on, opacity: emailBusy || !email.trim() ? 0.6 : 1 }}>{emailBusy ? t("is.adding") : t("is.addInvite")}</button>
             </div>
+
+            {/* Invite directly as admin (their role is set the moment they join) */}
+            <button onClick={() => setAsAdmin((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", borderRadius: 12, background: asAdmin ? "rgba(154,124,235,0.14)" : "rgba(255,255,255,0.04)", border: `1px solid ${asAdmin ? "rgba(154,124,235,0.45)" : "rgba(255,255,255,0.1)"}`, cursor: "pointer", marginBottom: 14 }}>
+              <div style={{ width: 20, height: 20, flex: "0 0 auto", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: asAdmin ? on : "transparent", border: asAdmin ? "none" : "1px solid rgba(255,255,255,0.3)" }}>
+                {asAdmin && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
+              </div>
+              <div style={{ flex: 1, textAlign: "start" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: "#ECE7FA" }}>{t("is.asAdmin")}</div>
+                <div style={{ fontSize: 11.5, color: "rgba(236,231,250,0.55)" }}>{t("is.asAdminSub")}</div>
+              </div>
+            </button>
+
             {emailMsg === "added" && (
-              <div style={{ display: "flex", alignItems: "center", gap: 9, padding: 12, borderRadius: 13, background: "rgba(127,214,162,0.1)", border: "1px solid rgba(127,214,162,0.3)", marginBottom: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9, padding: 12, borderRadius: 13, background: "rgba(127,214,162,0.1)", border: "1px solid rgba(127,214,162,0.3)", marginBottom: 6 }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7FD6A2" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                 <span style={{ fontSize: 13, fontWeight: 600, color: "#A8E8C2" }}>{t("is.added")}</span>
               </div>
             )}
             {emailMsg === "exists" && (
-              <div style={{ fontSize: 12.5, color: "#F2D08C", marginBottom: 14 }}>{t("is.alreadyInvited")}</div>
-            )}
-
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: "rgba(236,231,250,0.6)", marginTop: 6, marginBottom: 9 }}>{t("is.pendingInvites")}</div>
-            {invites.length === 0 ? (
-              <div style={{ fontSize: 12.5, color: "rgba(236,231,250,0.45)", padding: "8px 0" }}>{t("is.noPending")}</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                {invites.map((inv) => (
-                  <div key={inv.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: "#ECE7FA", direction: "ltr", textAlign: "start", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{inv.email}</span>
-                    <span style={{ fontSize: 10.5, fontWeight: 600, padding: "3px 9px", borderRadius: 999, background: inv.status === "accepted" ? "rgba(127,214,162,0.15)" : "rgba(242,200,121,0.15)", border: `1px solid ${inv.status === "accepted" ? "rgba(127,214,162,0.34)" : "rgba(242,200,121,0.34)"}`, color: inv.status === "accepted" ? "#9FE3BD" : "#F2D08C" }}>{inv.status === "accepted" ? t("st.active") : t("st.pending")}</span>
-                    {inv.status === "pending" && (
-                      <button onClick={() => revoke(inv.id)} style={{ flex: "0 0 auto", width: 26, height: 26, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "none", cursor: "pointer" }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F0A4A4" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <div style={{ fontSize: 12.5, color: "#F2D08C", marginBottom: 6 }}>{t("is.alreadyInvited")}</div>
             )}
           </div>
         ) : (
@@ -239,11 +228,41 @@ function InviteSheet({ onClose }: { onClose: () => void }) {
   );
 }
 
+function InviteActionSheet({ invite, onAction, onClose }: { invite: Invitation; onAction: (k: "makeAdmin" | "makeRegular" | "revoke") => void; onClose: () => void }) {
+  const { t } = useLang();
+  const isAdmin = invite.role === "admin";
+  return (
+    <Overlay onClose={onClose}>
+      <div style={{ ...sheet, padding: "12px 20px 26px" }}>
+        {grab}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, paddingBottom: 16, marginBottom: 6, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+          <div style={{ width: 42, height: 42, flex: "0 0 auto", borderRadius: 12, background: "rgba(242,200,121,0.14)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F2D08C" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" /></svg>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#F1ECFF", direction: "ltr", textAlign: "start", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{invite.email}</div>
+            <div style={{ fontSize: 12, color: "rgba(236,231,250,0.55)" }}>{t("ia.pendingNote")}</div>
+          </div>
+          <span style={{ fontSize: 11.5, fontWeight: 600, padding: "5px 12px", borderRadius: 999, background: "rgba(242,200,121,0.15)", border: "1px solid rgba(242,200,121,0.34)", color: "#F2D08C" }}>{t("st.pending")}</span>
+        </div>
+        {isAdmin ? (
+          <ActionRow onClick={() => onAction("makeRegular")} bg="rgba(255,255,255,0.07)" title={t("ia.makeRegular")} sub={t("ia.makeRegularSub")} icon={<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(236,231,250,0.7)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>} />
+        ) : (
+          <ActionRow onClick={() => onAction("makeAdmin")} tint="rgba(154,124,235,0.1)" bg="rgba(154,124,235,0.16)" title={t("ia.makeAdmin")} sub={t("ia.makeAdminSub")} titleColor="#C9B6F2" icon={<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#C9B6F2" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 4 5v6c0 5 3.4 8.5 8 11 4.6-2.5 8-6 8-11V5z" /><path d="M9 12l2 2 4-4" /></svg>} />
+        )}
+        <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "7px 8px 4px" }} />
+        <ActionRow onClick={() => onAction("revoke")} bg="rgba(232,124,124,0.14)" title={t("ia.revoke")} sub={t("ia.revokeSub")} titleColor="#F0B4B4" subColor="rgba(232,124,124,0.6)" icon={<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#F0A4A4" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>} />
+      </div>
+    </Overlay>
+  );
+}
+
 export default function AdminPage() {
   const { t } = useLang();
   const [profiles, setProfiles] = useState<DbProfile[] | null>(null);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [actionUser, setActionUser] = useState<DbProfile | null>(null);
+  const [actionInvite, setActionInvite] = useState<Invitation | null>(null);
   const [invite, setInvite] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -268,7 +287,16 @@ export default function AdminPage() {
     setActionUser(null);
   };
 
-  const revokeInvite = async (id: string) => { try { await revokeInvitation(id); await reload(); } catch { /* ignore */ } };
+  const runInviteAction = async (kind: "makeAdmin" | "makeRegular" | "revoke") => {
+    if (!actionInvite) return;
+    try {
+      if (kind === "makeAdmin") await setInvitationRole(actionInvite.id, "admin");
+      else if (kind === "makeRegular") await setInvitationRole(actionInvite.id, "user");
+      else if (kind === "revoke") await revokeInvitation(actionInvite.id);
+      await reload();
+    } catch { /* ignore */ }
+    setActionInvite(null);
+  };
 
   const list = profiles ?? [];
   const profileEmails = new Set(list.map((u) => u.email.toLowerCase()));
@@ -353,11 +381,14 @@ export default function AdminPage() {
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 600, color: "#F1ECFF", direction: "ltr", textAlign: "start", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{inv.email}</div>
-                    <div style={{ fontSize: 11, color: "rgba(236,231,250,0.5)" }}>{t("is.approvedSub")}</div>
+                    <div style={{ fontSize: 11, color: "rgba(236,231,250,0.5)" }}>{inv.role === "admin" ? t("is.willBeAdmin") : t("is.approvedSub")}</div>
                   </div>
+                  {inv.role === "admin" && (
+                    <span style={{ fontSize: 10.5, fontWeight: 700, padding: "4px 9px", borderRadius: 999, background: STATUS.admin.pillBg, border: `1px solid ${STATUS.admin.pillBord}`, color: STATUS.admin.pillText, flex: "0 0 auto" }}>{t("st.admin")}</span>
+                  )}
                   <span style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 999, background: "rgba(242,200,121,0.15)", border: "1px solid rgba(242,200,121,0.34)", color: "#F2D08C", flex: "0 0 auto" }}>{t("st.pending")}</span>
-                  <button onClick={() => revokeInvite(inv.id)} style={{ width: 26, height: 26, flex: "0 0 auto", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "none", cursor: "pointer" }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F0A4A4" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                  <button onClick={() => setActionInvite(inv)} style={{ width: 26, height: 26, flex: "0 0 auto", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "none", cursor: "pointer" }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="rgba(236,231,250,0.5)"><circle cx="12" cy="5" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="12" cy="19" r="1.7" /></svg>
                   </button>
                 </div>
               ))}
@@ -368,6 +399,7 @@ export default function AdminPage() {
 
       {invite && <InviteSheet onClose={() => { setInvite(false); reload(); }} />}
       {actionUser && <UserActionSheet user={actionUser} busy={busy} onAction={runAction} onClose={() => setActionUser(null)} />}
+      {actionInvite && <InviteActionSheet invite={actionInvite} onAction={runInviteAction} onClose={() => setActionInvite(null)} />}
     </main>
   );
 }

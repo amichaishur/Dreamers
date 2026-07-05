@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import StarField from "@/components/StarField";
 import BottomNav from "@/components/BottomNav";
@@ -18,7 +17,6 @@ const GoogleIcon = ({ s = 12 }: { s?: number }) => (
 
 export default function ProfilePage() {
   const { t, lang, setLang } = useLang();
-  const router = useRouter();
   const [profile, setProfile] = useState<DbProfile | null | undefined>(undefined);
   const [entries, setEntries] = useState<DbEntry[]>([]);
 
@@ -32,8 +30,7 @@ export default function ProfilePage() {
   const signOut = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/welcome");
-    router.refresh();
+    window.location.href = "/welcome";
   };
 
   if (profile === undefined) return <main style={{ position: "relative", minHeight: "100svh", background: BG }} />;

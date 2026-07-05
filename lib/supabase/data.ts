@@ -222,27 +222,34 @@ export async function removeUser(id: string): Promise<void> {
 
 // ---------- Invitations & codes (admin controls who joins) ----------
 
-export type Invitation = { id: string; email: string; status: "pending" | "accepted"; created_at: string };
+export type Invitation = { id: string; email: string; status: "pending" | "accepted"; role: "user" | "admin"; created_at: string };
 export type InviteCode = { id: string; code: string; single_use: boolean; max_uses: number | null; used_count: number; expires_at: string | null; created_at: string };
 
 export async function listInvitations(): Promise<Invitation[]> {
   const supabase = createClient();
-  const { data, error } = await supabase.from("invitations").select("id,email,status,created_at").order("created_at", { ascending: false });
+  const { data, error } = await supabase.from("invitations").select("id,email,status,role,created_at").order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as Invitation[];
 }
 
-/** Pre-approve an email. Returns "added" or "exists". */
-export async function createInvitation(email: string): Promise<"added" | "exists"> {
+/** Pre-approve an email, optionally as admin. Returns "added" or "exists". */
+export async function createInvitation(email: string, role: "user" | "admin" = "user"): Promise<"added" | "exists"> {
   const supabase = createClient();
   const { data: auth } = await supabase.auth.getUser();
   const clean = email.trim().toLowerCase();
-  const { error } = await supabase.from("invitations").insert({ email: clean, invited_by: auth.user?.id ?? null, status: "pending" });
+  const { error } = await supabase.from("invitations").insert({ email: clean, invited_by: auth.user?.id ?? null, status: "pending", role });
   if (error) {
     if (error.code === "23505") return "exists"; // unique_violation
     throw error;
   }
   return "added";
+}
+
+/** Change the role a pending invitation will grant on join (e.g. promote to admin before they log in). */
+export async function setInvitationRole(id: string, role: "user" | "admin"): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase.from("invitations").update({ role }).eq("id", id);
+  if (error) throw error;
 }
 
 export async function revokeInvitation(id: string): Promise<void> {

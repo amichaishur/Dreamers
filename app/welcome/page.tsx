@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import StarField from "@/components/StarField";
 import WeaveSphere from "@/components/WeaveSphere";
@@ -36,7 +36,6 @@ function WelcomeInner() {
   const sp = useSearchParams();
   const pending = sp.get("mode") === "pending";
   const { t } = useLang();
-  const router = useRouter();
   const [showCode, setShowCode] = useState(false);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -53,8 +52,9 @@ function WelcomeInner() {
   const signOutBack = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/welcome");
-    router.refresh();
+    // Hard navigation so the cleared session cookies are seen server-side and
+    // the login screen actually shows (router.push kept bouncing to pending).
+    window.location.href = "/welcome";
   };
 
   const redeem = async () => {
@@ -63,11 +63,10 @@ function WelcomeInner() {
     setErr("");
     const supabase = createClient();
     const { data, error } = await supabase.rpc("redeem_code", { p_code: code.trim() });
-    setBusy(false);
     if (!error && data === true) {
-      router.push("/home");
-      router.refresh();
+      window.location.href = "/home";
     } else {
+      setBusy(false);
       setErr(t("wc.codeInvalid"));
     }
   };

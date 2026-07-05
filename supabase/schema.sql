@@ -21,8 +21,10 @@ create table if not exists public.invitations (
   email      text not null unique,
   invited_by uuid references auth.users(id) on delete set null,
   status     text not null default 'pending' check (status in ('pending','accepted')),
+  role       text not null default 'user' check (role in ('user','admin')),
   created_at timestamptz not null default now()
 );
+alter table public.invitations add column if not exists role text not null default 'user' check (role in ('user','admin'));
 
 create table if not exists public.invite_codes (
   id          uuid primary key default gen_random_uuid(),
@@ -103,21 +105,23 @@ $$;
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare
-  is_boot   boolean := (new.email = 'amichaishur@gmail.com');
-  invited   boolean := exists (select 1 from public.invitations where lower(email) = lower(new.email));
+  is_boot boolean := (new.email = 'amichaishur@gmail.com');
+  inv     public.invitations%rowtype;
 begin
+  select * into inv from public.invitations where lower(email) = lower(new.email) limit 1;
+
   insert into public.profiles (id, email, display_name, role, status)
   values (
     new.id,
     new.email,
     coalesce(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', split_part(new.email,'@',1)),
-    case when is_boot then 'admin' else 'user' end,
-    case when is_boot or invited then 'active' else 'pending' end
+    case when is_boot then 'admin' when inv.id is not null then inv.role else 'user' end,
+    case when is_boot or inv.id is not null then 'active' else 'pending' end
   )
   on conflict (id) do nothing;
 
-  if invited then
-    update public.invitations set status = 'accepted' where lower(email) = lower(new.email);
+  if inv.id is not null then
+    update public.invitations set status = 'accepted' where id = inv.id;
   end if;
   return new;
 end;
