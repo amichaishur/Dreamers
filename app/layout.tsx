@@ -12,8 +12,17 @@ const heebo = Heebo({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://dreamers-maarag.netlify.app"),
   title: "Dreamers · מארג החיים",
   description: "מערכת ההפעלה האנושית",
+  openGraph: {
+    title: "Dreamers · מארג החיים",
+    description: "מערכת ההפעלה האנושית",
+    url: "https://dreamers-maarag.netlify.app",
+    siteName: "Dreamers",
+    type: "website",
+  },
+  twitter: { card: "summary_large_image", title: "Dreamers · מארג החיים", description: "מערכת ההפעלה האנושית" },
 };
 
 export const viewport = {
