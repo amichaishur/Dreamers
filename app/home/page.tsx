@@ -1,42 +1,60 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import StarField from "@/components/StarField";
 import WeaveSphere from "@/components/WeaveSphere";
 import BottomNav from "@/components/BottomNav";
 import { theme } from "@/lib/theme";
-import { mix, rgba } from "@/lib/color";
 import { useLang } from "@/lib/i18n";
-import { listEntries, DbEntry } from "@/lib/supabase/data";
+import { listConsciousnessDots, getProfile, MindDot, DbProfile } from "@/lib/supabase/data";
+import { initialsFrom } from "@/lib/format";
+
+// The weave renders one dot per memory, 1:1 with the number shown, up to this cap.
+// Beyond it (a very large community) it samples down while always keeping your own,
+// and each dot auto-shrinks so the sphere stays dense and beautiful as it grows.
+const MAX_DOTS = 400;
 
 export default function HomePage() {
   const p = theme;
   const { t, lang } = useLang();
-  const [entries, setEntries] = useState<DbEntry[] | null>(null);
+  const [dots, setDots] = useState<MindDot[] | null>(null);
+  const [profile, setProfile] = useState<DbProfile | null>(null);
+  const [mode, setMode] = useState<"collective" | "mine">("collective");
 
   useEffect(() => {
     let alive = true;
-    listEntries()
-      .then((rows) => { if (alive) setEntries(rows); })
-      .catch(() => { if (alive) setEntries([]); });
+    listConsciousnessDots().then((d) => { if (alive) setDots(d); }).catch(() => { if (alive) setDots([]); });
+    getProfile().then((pr) => { if (alive) setProfile(pr); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
-  const loading = entries === null;
-  const count = entries?.length ?? 0;
-  const isEmpty = !loading && count === 0;
-  const dotCount = loading ? 56 : Math.max(6, Math.min(90, count));
+  const loading = dots === null;
+  const total = dots?.length ?? 0;
+  const mineCount = dots ? dots.filter((d) => d.mine).length : 0;
+  const isEmpty = !loading && total === 0;
   const dateStr = new Date().toLocaleDateString(lang === "en" ? "en-US" : "he-IL", { day: "numeric", month: "long", year: "numeric" });
-  const recent = (entries ?? []).slice(0, 2);
+
+  // Everyone's dots (capped, mine-first from the RPC so the cap keeps my own).
+  const nodes = useMemo(() => (dots ? dots.slice(0, MAX_DOTS) : []), [dots]);
+  // Dots shrink as the weave grows so it stays dense and clean, never cluttered.
+  const dotScale = useMemo(() => Math.max(0.5, Math.min(1.15, Math.sqrt(110 / Math.max(1, nodes.length)))), [nodes.length]);
+  const dimSphere = loading || isEmpty;
+  const mineMode = mode === "mine";
+
+  const countText = loading
+    ? t("home.loading")
+    : mineMode
+      ? `${mineCount} ${t("home.woven")}`
+      : `${total} ${t("mind.collectiveWoven")}`;
 
   return (
     <main style={{ position: "relative", minHeight: "100svh", overflow: "hidden", background: p.bg, color: p.text }}>
       <StarField count={p.starCount} color={p.starColor} />
 
-      <div style={{ position: "relative", display: "flex", flexDirection: "column", padding: "24px 18px 96px", minHeight: "100svh" }}>
+      <div style={{ position: "relative", display: "flex", flexDirection: "column", padding: "24px 18px 92px", minHeight: "100svh" }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "flex-start" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <div style={{ position: "relative", width: 118 }}>
               <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1, direction: "ltr", textAlign: "left" }}>Dreamers</div>
@@ -54,20 +72,35 @@ export default function HomePage() {
             </div>
             <div style={{ fontSize: 12.5, color: p.subtext, whiteSpace: "nowrap", marginTop: 4 }}>{t("brand.sub")}</div>
           </div>
+
+          <Link href="/profile" aria-label={t("nav.profile")} style={{ position: "relative", width: 46, height: 46, flex: "0 0 auto", textDecoration: "none" }}>
+            <div style={{ position: "absolute", inset: -5, borderRadius: "50%", background: "radial-gradient(circle, rgba(124,92,196,0.45), transparent 68%)" }} />
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt="" referrerPolicy="no-referrer" style={{ position: "relative", width: 46, height: 46, borderRadius: "50%", objectFit: "cover", boxShadow: "0 6px 18px rgba(0,0,0,0.35), inset 0 1px 1px rgba(255,255,255,0.25)" }} />
+            ) : (
+              <div style={{ position: "relative", width: 46, height: 46, borderRadius: "50%", background: "linear-gradient(135deg,#6E8BFF,#9A6CFF)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 700, color: "#fff", boxShadow: "0 6px 18px rgba(0,0,0,0.35), inset 0 1px 1px rgba(255,255,255,0.3)" }}>
+                {initialsFrom(profile?.display_name ?? null, profile?.email ?? "")}
+              </div>
+            )}
+          </Link>
         </div>
 
         {/* Title */}
-        <div style={{ textAlign: "center", marginTop: 20 }}>
+        <div style={{ textAlign: "center", marginTop: 18 }}>
           <div style={{ fontSize: 12, letterSpacing: 1, color: p.subtext }}>{dateStr}</div>
           <div style={{ fontSize: 25, fontWeight: 700, lineHeight: 1.1, marginTop: 7 }}>{t("home.weave")}</div>
-          <div style={{ fontSize: 11.5, color: p.subtext, marginTop: 4 }}>{loading ? t("home.loading") : `${count} ${t("home.woven")}`}</div>
+          <div style={{ fontSize: 11.5, color: p.subtext, marginTop: 4 }}>{countText}</div>
         </div>
 
-        {/* Weave sphere */}
-        <div style={{ position: "relative", flex: "0 0 auto", height: 346, marginTop: 6 }}>
-          <div style={{ position: "absolute", inset: 0, background: p.coreGlow, pointerEvents: "none", opacity: isEmpty ? 0.4 : 1 }} />
-          <div style={{ opacity: isEmpty ? 0.35 : 1, transition: "opacity 0.4s" }}>
-            <WeaveSphere dots={p.dots} lineColor={p.lineColor} count={dotCount} frozen={isEmpty} />
+        {/* Weave sphere — fills the screen */}
+        <div style={{ position: "relative", flex: "1 1 auto", minHeight: 320, marginTop: 6 }}>
+          <div style={{ position: "absolute", inset: 0, background: p.coreGlow, pointerEvents: "none", opacity: dimSphere ? 0.4 : 1 }} />
+          <div style={{ position: "absolute", inset: 0, opacity: dimSphere ? 0.35 : 1, transition: "opacity 0.5s" }}>
+            {loading ? (
+              <WeaveSphere dots={p.dots} lineColor={p.lineColor} count={8} frozen />
+            ) : (
+              <WeaveSphere dots={p.dots} lineColor={p.lineColor} nodes={nodes} dotScale={dotScale} dimOthers={mineMode} frozen={isEmpty} />
+            )}
           </div>
           {isEmpty && (
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "0 30px", pointerEvents: "none" }}>
@@ -77,32 +110,33 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* Recent */}
+        {/* Consciousness toggle — small, above the nav */}
         {isEmpty ? (
-          <Link href="/entry/new" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 9, marginTop: 14, height: 50, borderRadius: 16, textDecoration: "none", background: `linear-gradient(135deg, ${p.fabFrom}, ${p.fabTo})`, boxShadow: `0 12px 30px ${p.fabFrom}73` }}>
+          <Link href="/entry/new" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 9, marginTop: 8, height: 50, borderRadius: 16, textDecoration: "none", background: `linear-gradient(135deg, ${p.fabFrom}, ${p.fabTo})`, boxShadow: `0 12px 30px ${p.fabFrom}73` }}>
             <span style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>{t("home.emptyCta")}</span>
           </Link>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 14 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: 0.4, color: p.subtext }}>{t("home.recently")}</div>
-            {recent.map((e) => {
-              const c = p.dots[e.type];
-              const hexBg = `radial-gradient(circle at 50% 30%, ${mix(c, "#ffffff", 0.5)} 0%, ${c} 52%, ${mix(c, "#0a0512", 0.4)} 100%)`;
-              const miniGlow = `drop-shadow(0 0 4px ${rgba(c, 0.95)}) drop-shadow(0 0 8px ${rgba(c, 0.45)})`;
-              const time = new Date(e.created_at).toLocaleTimeString(lang === "en" ? "en-US" : "he-IL", { hour: "2-digit", minute: "2-digit" });
-              return (
-                <Link key={e.id} href={`/entry/${e.id}`} style={{ display: "flex", alignItems: "center", gap: 12, background: p.cardBg, border: `1px solid ${p.cardBorder}`, borderRadius: 15, padding: "12px 14px", textDecoration: "none", color: "inherit" }}>
-                  <div style={{ filter: miniGlow, display: "flex", flex: "0 0 auto" }}>
-                    <div style={{ width: 12, height: 13, clipPath: "polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%)", background: hexBg }} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.title}</div>
-                    <div style={{ fontSize: 11.5, color: p.subtext, marginTop: 2 }}>{t(`diary.${e.type}`)}</div>
-                  </div>
-                  <div style={{ fontSize: 11.5, color: p.subtext, fontVariantNumeric: "tabular-nums" }}>{time}</div>
-                </Link>
-              );
-            })}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, marginTop: 8 }}>
+            <div style={{ display: "flex", background: "rgba(0,0,0,0.28)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 999, padding: 3, width: 218 }}>
+              {(["collective", "mine"] as const).map((m) => {
+                const on = mode === m;
+                return (
+                  <button
+                    key={m}
+                    onClick={() => setMode(m)}
+                    style={{
+                      flex: 1, border: "none", cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 700, padding: "7px 0", borderRadius: 999,
+                      background: on ? `linear-gradient(135deg, ${p.fabFrom}, ${p.fabTo})` : "transparent",
+                      color: on ? "#fff" : "rgba(233,236,255,0.6)",
+                      boxShadow: on ? "0 5px 14px rgba(120,110,255,0.38)" : "none",
+                    }}
+                  >
+                    {m === "collective" ? t("mind.collectiveShort") : t("mind.mineShort")}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 11, color: p.subtext, height: 14 }}>{mineMode ? t("mind.mineHint") : ""}</div>
           </div>
         )}
       </div>

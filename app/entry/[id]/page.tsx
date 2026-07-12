@@ -149,7 +149,7 @@ export default function EntryPage() {
             <span style={{ width: 9, height: 9, borderRadius: "50%", background: d.color, boxShadow: `0 0 7px ${d.color}` }} />
             <span style={{ fontSize: 13.5, fontWeight: 500, color: p.subtext }}>{t("ef.lucidity")}</span>
             <span style={{ flex: 1 }} />
-            <span style={{ fontSize: 14, fontWeight: 700, color: s.nameColor }}>{t(`luc.${e.lucidity}`)}</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: s.nameColor, fontVariantNumeric: "tabular-nums" }}>{e.lucidity} / 10</span>
           </div>
         )}
 

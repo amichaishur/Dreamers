@@ -10,7 +10,7 @@ function g(hex: string, al: number) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${al})`;
 }
 
-type Active = "mind" | "journals" | "dash" | "profile";
+type Active = "mind" | "journals" | "dash" | "community" | "none";
 
 export default function BottomNav({ active }: { active: Active }) {
   const p = theme;
@@ -23,7 +23,7 @@ export default function BottomNav({ active }: { active: Active }) {
   const mindC = active === "mind" ? on : off;
   const jrnC = active === "journals" ? on : off;
   const dashC = active === "dash" ? on : off;
-  const profC = active === "profile" ? on : off;
+  const commC = active === "community" ? on : off;
   const item: React.CSSProperties = {
     textDecoration: "none",
     display: "flex",
@@ -94,12 +94,16 @@ export default function BottomNav({ active }: { active: Active }) {
           <div style={{ fontSize: 10.5, fontWeight: 500, color: dashC }}>{t("nav.dash")}</div>
         </Link>
 
-        <Link href="/profile" style={item}>
-          <div style={{ width: 17, height: 17, display: "flex", flexDirection: "column", alignItems: "center", filter: mk("profile") }}>
-            <div style={{ width: 7, height: 7, borderRadius: "50%", background: profC }} />
-            <div style={{ width: 14, height: 8, borderRadius: "8px 8px 0 0", background: profC, marginTop: 1.5 }} />
+        <Link href="/community" style={item}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 18, filter: mk("community") }}>
+            <svg width="22" height="20" viewBox="0 0 24 24" fill="none" stroke={commC} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="9" cy="8" r="3.2" />
+              <path d="M3.5 19a5.5 5.5 0 0 1 11 0" />
+              <circle cx="17" cy="8.5" r="2.6" />
+              <path d="M16 13.4a4.8 4.8 0 0 1 4.5 5.1" />
+            </svg>
           </div>
-          <div style={{ fontSize: 10.5, fontWeight: 500, color: profC }}>{t("nav.profile")}</div>
+          <div style={{ fontSize: 10.5, fontWeight: 500, color: commC }}>{t("nav.community")}</div>
         </Link>
       </div>
     </div>

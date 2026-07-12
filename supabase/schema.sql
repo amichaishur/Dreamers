@@ -10,11 +10,13 @@ create table if not exists public.profiles (
   id           uuid primary key references auth.users(id) on delete cascade,
   email        text not null,
   display_name text,
+  avatar_url   text,
   role         text not null default 'user'    check (role in ('user','admin')),
   status       text not null default 'pending'  check (status in ('pending','active','suspended')),
   language     text not null default 'he'       check (language in ('he','en')),
   created_at   timestamptz not null default now()
 );
+alter table public.profiles add column if not exists avatar_url text;
 
 create table if not exists public.invitations (
   id         uuid primary key default gen_random_uuid(),
@@ -47,10 +49,10 @@ create table if not exists public.code_redemptions (
 create table if not exists public.entries (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid not null references auth.users(id) on delete cascade,
-  type       text not null check (type in ('creation','dream','idea','reality')),
+  type       text not null check (type in ('creation','dream','idea','reality','record')),
   title      text not null,
   body       text not null default '',
-  lucidity   text check (lucidity in ('low','med','high')),
+  lucidity   text check (lucidity is null or lucidity ~ '^([0-9]|10)$'),  -- 0-10 scale
   media_url  text,
   visibility text not null default 'private' check (visibility in ('private','public','custom')),
   created_at timestamptz not null default now(),
@@ -252,6 +254,31 @@ $$;
 grant execute on function public.list_shared_entries() to authenticated;
 grant execute on function public.get_shared_entry(uuid) to anon, authenticated;
 
+-- Community header stats. security definer so it can count members/entries
+-- without exposing any private content or profile details.
+create or replace function public.community_stats()
+returns table (members int, shared int, week int)
+language sql security definer stable set search_path = public as $$
+  select
+    (select count(*)::int from public.profiles where status = 'active'),
+    (select count(*)::int from public.entries where visibility = 'public'),
+    (select count(*)::int from public.entries where visibility = 'public' and created_at > now() - interval '7 days');
+$$;
+grant execute on function public.community_stats() to authenticated;
+
+-- Collective consciousness dots. Returns EVERY entry as an anonymous dot —
+-- only its type (for color) and whether it belongs to the caller (for the glow).
+-- No title/body/author is ever exposed. mine-first so a client-side cap keeps
+-- the caller's own dots. The actual content stays private (RLS on entries).
+create or replace function public.consciousness_dots()
+returns table (type text, mine boolean)
+language sql security definer stable set search_path = public as $$
+  select e.type, (e.user_id = auth.uid()) as mine
+  from public.entries e
+  order by (e.user_id = auth.uid()) desc, e.created_at desc;
+$$;
+grant execute on function public.consciousness_dots() to authenticated;
+
 -- ---------- Storage (media bucket, private, owner-only) ----------
 insert into storage.buckets (id, name, public) values ('media','media', false)
   on conflict (id) do nothing;
@@ -262,6 +289,21 @@ create policy media_owner_write on storage.objects for insert
   with check (bucket_id = 'media' and owner = auth.uid());
 create policy media_owner_delete on storage.objects for delete
   using (bucket_id = 'media' and owner = auth.uid());
+
+-- ---------- Storage (avatars bucket, public-read, owner-write) ----------
+-- Profile photos are public so they can render on the home avatar and (later)
+-- next to community shares. Only the owner can upload/replace/delete their own.
+insert into storage.buckets (id, name, public) values ('avatars','avatars', true)
+  on conflict (id) do nothing;
+
+create policy avatars_public_read on storage.objects for select
+  using (bucket_id = 'avatars');
+create policy avatars_owner_write on storage.objects for insert
+  with check (bucket_id = 'avatars' and owner = auth.uid());
+create policy avatars_owner_update on storage.objects for update
+  using (bucket_id = 'avatars' and owner = auth.uid());
+create policy avatars_owner_delete on storage.objects for delete
+  using (bucket_id = 'avatars' and owner = auth.uid());
 
 -- ---------- Seed: pre-approve the owner ----------
 insert into public.invitations (email, status) values ('amichaishur@gmail.com','pending')

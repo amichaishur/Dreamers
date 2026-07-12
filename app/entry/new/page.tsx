@@ -60,7 +60,7 @@ function DiaryPickSheet({ onPick }: { onPick: (k: DiaryKey) => void }) {
   );
 }
 
-const DIARY_KEYS: DiaryKey[] = ["creation", "dream", "idea", "reality"];
+const DIARY_KEYS: DiaryKey[] = ["creation", "dream", "idea", "reality", "record"];
 
 function NewEntryInner() {
   const router = useRouter();
@@ -86,6 +86,7 @@ function NewEntryInner() {
           lucidity: selected === "dream" ? v.lucidity : null,
           visibility: "private",
           file: v.file,
+          created_at: v.createdAt,
         });
         if (v.shared) await setEntrySharing(entry.id, { shared: true, anonymous: v.anonymous });
         const all = await listEntries();

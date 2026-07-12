@@ -1,4 +1,4 @@
-export type DiaryType = "creation" | "dream" | "idea" | "reality";
+export type DiaryType = "creation" | "dream" | "idea" | "reality" | "record";
 
 export type Palette = {
   bg: string;
@@ -35,7 +35,7 @@ export const palettes: Record<string, Palette> = {
     fabTo: "#9A6CFF",
     navActive: "#BFD3FF",
     navGlow: "#7E96FF",
-    dots: { creation: "#5BC8FF", dream: "#B98BFF", idea: "#5BE7C4", reality: "#FFC15B" },
+    dots: { creation: "#5BC8FF", dream: "#B98BFF", idea: "#5BE7C4", reality: "#FFC15B", record: "#FF9F5B" },
   },
   violet: {
     bg: "linear-gradient(165deg,#1E0B3A 0%,#3A1566 52%,#52207F 100%)",
@@ -53,7 +53,7 @@ export const palettes: Record<string, Palette> = {
     fabTo: "#7E3FE0",
     navActive: "#DCC7FF",
     navGlow: "#A85CFF",
-    dots: { creation: "#6FA8FF", dream: "#C07BFF", idea: "#5FE0B0", reality: "#FFD15F" },
+    dots: { creation: "#6FA8FF", dream: "#C07BFF", idea: "#5FE0B0", reality: "#FFD15F", record: "#FFA766" },
   },
   red: {
     bg: "linear-gradient(168deg,#2A0C18 0%,#3E1322 52%,#180611 100%)",
@@ -71,7 +71,7 @@ export const palettes: Record<string, Palette> = {
     fabTo: "#E0466B",
     navActive: "#FFC9B8",
     navGlow: "#FF7A6B",
-    dots: { creation: "#FF9B6B", dream: "#FF6F9A", idea: "#FFB84D", reality: "#FFE07A" },
+    dots: { creation: "#FF9B6B", dream: "#FF6F9A", idea: "#FFB84D", reality: "#FFE07A", record: "#FFB27A" },
   },
   purpleRed: {
     bg: "linear-gradient(165deg,#2A0E33 0%,#52183F 50%,#7A1E38 100%)",
@@ -89,7 +89,7 @@ export const palettes: Record<string, Palette> = {
     fabTo: "#FF5C8A",
     navActive: "#F2C9E6",
     navGlow: "#FF5C8A",
-    dots: { creation: "#C77BFF", dream: "#FF6FB5", idea: "#FF8FA0", reality: "#FFC861" },
+    dots: { creation: "#C77BFF", dream: "#FF6FB5", idea: "#FF8FA0", reality: "#FFC861", record: "#FFA766" },
   },
 };
 
@@ -101,4 +101,5 @@ export const DIARY_LABELS: Record<DiaryType, string> = {
   dream: "חלום",
   idea: "רעיון",
   reality: "מציאות",
+  record: "רשומה",
 };

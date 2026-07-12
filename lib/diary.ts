@@ -1,12 +1,14 @@
 import { rgba, mix } from "./color";
 
-export type DiaryKey = "creation" | "dream" | "idea" | "reality";
+export type DiaryKey = "creation" | "dream" | "idea" | "reality" | "record";
 
+// Order matches Amichai's journals screen: dream, creation, idea, reality, record.
 export const DIARIES: { key: DiaryKey; name: string; hint: string; color: string }[] = [
-  { key: "creation", name: "יצירה", hint: "מה שיצרתי או בניתי", color: "#6FA8DC" },
   { key: "dream", name: "חלום", hint: "מסעות הלילה והתת־מודע", color: "#B79CEB" },
+  { key: "creation", name: "יצירה", hint: "מה שיצרתי או בניתי", color: "#6FA8DC" },
   { key: "idea", name: "רעיון", hint: "ניצוצות והברקות שצפו", color: "#7FD6A2" },
   { key: "reality", name: "מציאות", hint: "רגעים מהיום שחלף", color: "#F2C879" },
+  { key: "record", name: "רשומה", hint: "רשומה חופשית", color: "#E8935B" },
 ];
 
 export const DIARY_MAP = Object.fromEntries(DIARIES.map((d) => [d.key, d])) as Record<DiaryKey, (typeof DIARIES)[number]>;
