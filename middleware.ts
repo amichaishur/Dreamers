@@ -6,6 +6,14 @@ const GATE_COOKIE = "dreamers_gate";
 const GATE_TTL = 60; // seconds
 
 export async function middleware(req: NextRequest) {
+  // Showcase preview: no auth gate — the client browses every screen on demo data.
+  if (process.env.NEXT_PUBLIC_SHOWCASE === "1") {
+    if (req.nextUrl.pathname === "/welcome") {
+      return NextResponse.redirect(new URL("/home", req.url));
+    }
+    return NextResponse.next({ request: req });
+  }
+
   let res = NextResponse.next({ request: req });
 
   const supabase = createServerClient(

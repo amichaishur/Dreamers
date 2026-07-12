@@ -46,6 +46,7 @@ export type DbProfile = {
 };
 
 export async function getProfile(): Promise<DbProfile | null> {
+  if (demoEnabled()) return demoProfileObj();
   const supabase = createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return null;
@@ -75,6 +76,7 @@ export async function setProfileAvatar(url: string | null): Promise<void> {
 }
 
 export async function listEntries(): Promise<DbEntry[]> {
+  if (demoEnabled()) return demoPersonalEntries();
   const supabase = createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return [];
@@ -89,6 +91,7 @@ export async function listEntries(): Promise<DbEntry[]> {
 }
 
 export async function getEntry(id: string): Promise<DbEntry | null> {
+  if (demoEnabled()) return demoPersonalEntries().find((e) => e.id === id) ?? null;
   const supabase = createClient();
   const { data } = await supabase.from("entries").select("*").eq("id", id).maybeSingle();
   return (data as DbEntry) ?? null;
@@ -204,6 +207,7 @@ export async function setEntrySharing(id: string, opts: { shared: boolean; anony
 }
 
 export async function listSharedEntries(): Promise<SharedEntry[]> {
+  if (demoEnabled()) return demoSharedList();
   const supabase = createClient();
   const { data, error } = await supabase.rpc("list_shared_entries");
   if (error) throw error;
@@ -211,6 +215,7 @@ export async function listSharedEntries(): Promise<SharedEntry[]> {
 }
 
 export async function getSharedEntry(id: string): Promise<SharedEntry | null> {
+  if (demoEnabled()) return demoSharedList().find((e) => e.id === id) ?? null;
   const supabase = createClient();
   const { data, error } = await supabase.rpc("get_shared_entry", { p_id: id });
   if (error) return null;
@@ -223,10 +228,16 @@ export type MindDot = { type: DiaryType; mine: boolean };
 // Preview-only demo mode. Enabled with ?demo (persisted), disabled with ?nodemo.
 // Never active on the production host — purely for showing a populated weave in preview.
 const PROD_HOST = "dreamers-maarag.netlify.app";
+// Showcase = a login-free preview deployment (set NEXT_PUBLIC_SHOWCASE=1 on the
+// preview Netlify site). Everything runs on demo data so the client can browse
+// every screen without signing in. Production never sets this.
+export const SHOWCASE = process.env.NEXT_PUBLIC_SHOWCASE === "1";
+
 // On any non-production host (localhost / LAN / preview deploys) the weave shows
 // demo data BY DEFAULT so previews look populated. Turn off with ?nodemo (persisted),
 // back on with ?demo. Production is never demo.
 export function demoEnabled(): boolean {
+  if (SHOWCASE) return true;
   if (typeof window === "undefined") return false;
   if (window.location.hostname === PROD_HOST) return false;
   const s = window.location.search;
@@ -234,6 +245,52 @@ export function demoEnabled(): boolean {
   if (s.includes("demo")) { window.localStorage.removeItem("dreamers_demo_off"); return true; }
   if (window.localStorage.getItem("dreamers_demo_off") === "1") return false;
   return true;
+}
+
+// ---- Demo content for showcase / preview ----
+const DEMO_TITLES = ["טיסה מעל הים", "בית הילדות", "מבוך אינסופי", "שיחה עם סבתא", "נפילה איטית", "יער זוהר", "מרוץ בזמן", "דלת נסתרת", "ריקוד על המים", "עיר תת־ימית", "כנפיים חדשות", "גשר הכוכבים", "חדר ללא קירות", "אור בקצה", "מסע אל השחר"];
+const DEMO_AUTHORS = ["מיכל", "יונתן", "נועה", "דניאל", "תמר", "איתי", null, "שירה", null, "אורי"];
+
+function demoDateISO(daysAgo: number, hour = 3): string {
+  return new Date(Date.now() - daysAgo * 86400000 - hour * 3600000).toISOString();
+}
+
+function demoPersonalEntries(): DbEntry[] {
+  const types: DiaryType[] = ["dream", "dream", "idea", "dream", "creation", "dream", "reality", "dream", "idea", "record", "dream", "creation", "dream", "reality", "dream"];
+  return types.map((type, i) => ({
+    id: `demo-p-${i}`,
+    type,
+    title: DEMO_TITLES[i % DEMO_TITLES.length],
+    body: "רשומה לדוגמה במצב תצוגה.",
+    lucidity: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(5 + 3 * Math.sin(i * 1.1))))) : null,
+    media_url: null,
+    visibility: i % 5 === 0 ? "public" : "private",
+    shared_anonymous: false,
+    shared_media_url: null,
+    created_at: demoDateISO(i * 2 + (i % 3)),
+  }));
+}
+
+function demoSharedList(): SharedEntry[] {
+  const types: DiaryType[] = ["dream", "creation", "dream", "idea", "dream", "reality", "dream", "record", "creation", "dream", "idea", "dream"];
+  return types.map((type, i) => {
+    const author = DEMO_AUTHORS[i % DEMO_AUTHORS.length];
+    return {
+      id: `demo-s-${i}`,
+      type,
+      title: DEMO_TITLES[(i + 3) % DEMO_TITLES.length],
+      body: "חלום ששותף לקהילה במצב תצוגה. הפרטים המלאים נראים רק בקהילה.",
+      lucidity: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(6 + 3 * Math.sin(i * 0.9))))) : null,
+      shared_media_url: null,
+      created_at: demoDateISO(i + 1),
+      shared_anonymous: author === null,
+      author_name: author,
+    };
+  });
+}
+
+function demoProfileObj(): DbProfile {
+  return { id: "demo-user", email: "guest@dreamers.app", display_name: "אורח/ת", avatar_url: null, role: "user", status: "active", language: "he", created_at: demoDateISO(120) };
 }
 
 const DEMO_TYPES: DiaryType[] = ["dream", "creation", "idea", "reality", "record"];
