@@ -227,19 +227,24 @@ export type MindDot = { type: DiaryType; mine: boolean };
 
 // Preview-only demo mode. Enabled with ?demo (persisted), disabled with ?nodemo.
 // Never active on the production host — purely for showing a populated weave in preview.
-const PROD_HOST = "dreamers-maarag.netlify.app";
 // Showcase = a login-free preview deployment (set NEXT_PUBLIC_SHOWCASE=1 on the
 // preview Netlify site). Everything runs on demo data so the client can browse
 // every screen without signing in. Production never sets this.
 export const SHOWCASE = process.env.NEXT_PUBLIC_SHOWCASE === "1";
 
-// On any non-production host (localhost / LAN / preview deploys) the weave shows
-// demo data BY DEFAULT so previews look populated. Turn off with ?nodemo (persisted),
-// back on with ?demo. Production is never demo.
+// Demo/showcase data may ONLY appear when SHOWCASE is set (the preview site) or on a
+// local dev host. Any real domain — production or a future custom domain — always
+// shows real customer data, so demo can never leak to live users.
+function isLocalHost(h: string): boolean {
+  return h === "localhost" || h === "127.0.0.1" || h.endsWith(".local")
+    || /^192\.168\./.test(h) || /^10\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h);
+}
+
 export function demoEnabled(): boolean {
   if (SHOWCASE) return true;
   if (typeof window === "undefined") return false;
-  if (window.location.hostname === PROD_HOST) return false;
+  if (!isLocalHost(window.location.hostname)) return false; // real domains → always real data
+  // Local dev: demo on by default, toggle with ?demo / ?nodemo (persisted).
   const s = window.location.search;
   if (s.includes("nodemo")) { window.localStorage.setItem("dreamers_demo_off", "1"); return false; }
   if (s.includes("demo")) { window.localStorage.removeItem("dreamers_demo_off"); return true; }
