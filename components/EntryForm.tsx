@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import StarField from "@/components/StarField";
 import DiaryHex from "@/components/DiaryHex";
 import { theme } from "@/lib/theme";
@@ -18,7 +18,12 @@ export type EntryFormValues = {
   removeExisting: boolean;
   shared: boolean;
   anonymous: boolean;
+  createdAt: string; // ISO, editable (defaults to now)
 };
+
+function pad(n: number) { return String(n).padStart(2, "0"); }
+function toDateStr(d: Date) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+function toTimeStr(d: Date) { return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
 
 export default function EntryForm({
   diaryKey,
@@ -30,7 +35,7 @@ export default function EntryForm({
   onSubmit,
 }: {
   diaryKey: DiaryKey;
-  initial?: { title?: string; body?: string; lucidity?: Lucidity | null; shared?: boolean; anonymous?: boolean };
+  initial?: { title?: string; body?: string; lucidity?: Lucidity | null; shared?: boolean; anonymous?: boolean; createdAt?: string };
   existingMediaName?: string | null;
   headerKey: string; // e.g. "ef.newIn" or "ef.editIn"
   submitKey: string; // e.g. "ef.add" or "ef.save"
@@ -44,13 +49,21 @@ export default function EntryForm({
 
   const [title, setTitle] = useState(initial?.title ?? "");
   const [body, setBody] = useState(initial?.body ?? "");
-  const [lucidity, setLucidity] = useState<Lucidity>(initial?.lucidity ?? "high");
+  const [lucidity, setLucidity] = useState<Lucidity>(initial?.lucidity ?? "5");
   const [file, setFile] = useState<File | null>(null);
   const [removeExisting, setRemoveExisting] = useState(false);
   const [shared, setShared] = useState(initial?.shared ?? false);
   const [anonymous, setAnonymous] = useState(initial?.anonymous ?? false);
+  const initDate = initial?.createdAt ? new Date(initial.createdAt) : new Date();
+  const [dateStr, setDateStr] = useState(toDateStr(initDate));
+  const [timeStr, setTimeStr] = useState(toTimeStr(initDate));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const dateRef = useRef<HTMLInputElement>(null);
+  const timeRef = useRef<HTMLInputElement>(null);
+  const openPicker = (r: React.RefObject<HTMLInputElement | null>) => {
+    try { r.current?.showPicker(); } catch { r.current?.focus(); }
+  };
 
   const field: React.CSSProperties = { padding: "13px 15px", borderRadius: 14, background: p.cardBg, border: `1px solid ${p.cardBorder}`, fontSize: 14.5, color: p.text, width: "100%", font: "inherit" };
   const label: React.CSSProperties = { fontSize: 12.5, fontWeight: 600, color: p.subtext };
@@ -63,8 +76,9 @@ export default function EntryForm({
     if (!title.trim() || saving) return;
     setSaving(true);
     setError("");
+    const createdAt = new Date(`${dateStr}T${timeStr || "00:00"}`).toISOString();
     try {
-      await onSubmit({ title: title.trim(), body: body.trim(), lucidity, file, removeExisting, shared, anonymous });
+      await onSubmit({ title: title.trim(), body: body.trim(), lucidity, file, removeExisting, shared, anonymous, createdAt });
     } catch {
       setError(t("ef.error"));
       setSaving(false);
@@ -99,15 +113,17 @@ export default function EntryForm({
           </div>
 
           {isDream && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={label}>{t("ef.lucidity")}</div>
                 <div style={{ fontSize: 10.5, color: s.nameColor, background: s.chipBg, border: `1px solid ${s.bord}`, padding: "1px 8px", borderRadius: 999 }}>{t("ef.forDreams")}</div>
+                <span style={{ flex: 1 }} />
+                <span style={{ fontSize: 22, fontWeight: 800, color: s.nameColor, fontVariantNumeric: "tabular-nums" }}>{Number(lucidity) || 0}<span style={{ fontSize: 12.5, fontWeight: 500, color: p.subtext }}> / 10</span></span>
               </div>
-              <div style={{ display: "flex", gap: 9 }}>
-                <button style={chip(lucidity === "low")} onClick={() => setLucidity("low")}>{t("luc.low")}</button>
-                <button style={chip(lucidity === "med")} onClick={() => setLucidity("med")}>{t("luc.med")}</button>
-                <button style={chip(lucidity === "high")} onClick={() => setLucidity("high")}>{t("luc.high")}</button>
+              <input type="range" min={0} max={10} step={1} value={Number(lucidity) || 0} onChange={(e) => setLucidity(e.target.value)} dir="rtl" style={{ width: "100%", accentColor: d.color, height: 6 }} />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: p.subtext }}>
+                <span>{t("luc.scale0")}</span>
+                <span>{t("luc.scale10")}</span>
               </div>
             </div>
           )}
@@ -129,6 +145,30 @@ export default function EntryForm({
             </label>
           </div>
 
+          {/* Editable date + time (defaults to now, can log past entries) */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={label}>{t("ef.when")}</div>
+            <div style={{ padding: "12px 14px", borderRadius: 14, background: p.cardBg, border: `1px solid ${p.cardBorder}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={s.nameColor} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{t("ef.whenTitle")}</div>
+                  <div style={{ fontSize: 11.5, color: p.subtext, marginTop: 1 }}>{t("ef.whenSub")}</div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 9, marginTop: 11 }}>
+                <div onClick={() => openPicker(dateRef)} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 9, padding: "12px 14px", borderRadius: 14, background: p.cardBg, border: `1px solid ${p.cardBorder}`, cursor: "pointer" }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={s.nameColor} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+                  <input ref={dateRef} className="dt-native" type="date" value={dateStr} onChange={(e) => setDateStr(e.target.value)} dir="ltr" style={{ flex: "0 0 auto", width: "auto", background: "transparent", border: "none", outline: "none", color: p.text, fontSize: 14, font: "inherit", padding: 0, colorScheme: "dark", textAlign: "right" }} />
+                </div>
+                <div onClick={() => openPicker(timeRef)} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 9, padding: "12px 14px", borderRadius: 14, background: p.cardBg, border: `1px solid ${p.cardBorder}`, cursor: "pointer" }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={s.nameColor} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+                  <input ref={timeRef} className="dt-native" type="time" value={timeStr} onChange={(e) => setTimeStr(e.target.value)} dir="ltr" style={{ flex: "0 0 auto", width: "auto", background: "transparent", border: "none", outline: "none", color: p.text, fontSize: 14, font: "inherit", padding: 0, colorScheme: "dark" }} />
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={label}>{t("share.title")}</div>
             <div style={{ display: "flex", gap: 9 }}>
@@ -147,7 +187,7 @@ export default function EntryForm({
                   ? <><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></>
                   : <><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></>}
               </svg>
-              <span>{shared ? t("share.publicNote") : t("ef.privateNote")}</span>
+              <span>{shared ? t("share.publicNote") : t(`ef.pn.${diaryKey}`)}</span>
             </div>
           </div>
 

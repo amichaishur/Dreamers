@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import StarField from "@/components/StarField";
 import BottomNav from "@/components/BottomNav";
 import { useLang } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/client";
-import { getProfile, listEntries, DbProfile, DbEntry } from "@/lib/supabase/data";
+import { getProfile, listEntries, uploadAvatar, setProfileAvatar, DbProfile, DbEntry } from "@/lib/supabase/data";
 import { computeStats } from "@/lib/stats";
 import { initialsFrom } from "@/lib/format";
 
@@ -19,6 +19,8 @@ export default function ProfilePage() {
   const { t, lang, setLang } = useLang();
   const [profile, setProfile] = useState<DbProfile | null | undefined>(undefined);
   const [entries, setEntries] = useState<DbEntry[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -31,6 +33,23 @@ export default function ProfilePage() {
     const supabase = createClient();
     await supabase.auth.signOut();
     window.location.href = "/welcome";
+  };
+
+  const onPickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (fileRef.current) fileRef.current.value = "";
+    if (!f) return;
+    if (!f.type.startsWith("image/")) { alert(t("pf.photoErrType")); return; }
+    if (f.size > 5 * 1024 * 1024) { alert(t("pf.photoErrSize")); return; }
+    setUploading(true);
+    try {
+      const url = await uploadAvatar(f);
+      await setProfileAvatar(url);
+      setProfile((prev) => (prev ? { ...prev, avatar_url: url } : prev));
+    } catch {
+      alert(t("pf.photoErr"));
+    }
+    setUploading(false);
   };
 
   if (profile === undefined) return <main style={{ position: "relative", minHeight: "100svh", background: BG }} />;
@@ -51,10 +70,23 @@ export default function ProfilePage() {
 
       <div style={{ position: "relative", padding: "30px 20px 96px" }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
-          <div style={{ position: "relative", width: 84, height: 84, marginBottom: 13 }}>
+          <button onClick={() => fileRef.current?.click()} aria-label={t("pf.changePhoto")} style={{ position: "relative", width: 84, height: 84, marginBottom: 13, border: "none", background: "transparent", padding: 0, cursor: "pointer" }}>
             <div style={{ position: "absolute", inset: -9, borderRadius: "50%", background: `radial-gradient(circle, ${ringGlow}, transparent 68%)`, animation: "glowPulse 4.4s ease-in-out infinite" }} />
-            <div style={{ position: "relative", width: 84, height: 84, borderRadius: "50%", background: avatarBg, boxShadow: "0 8px 24px rgba(0,0,0,0.35), inset 0 1px 1px rgba(255,255,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30, fontWeight: 700, color: "#fff" }}>{initials}</div>
-          </div>
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt="" referrerPolicy="no-referrer" style={{ position: "relative", width: 84, height: 84, borderRadius: "50%", objectFit: "cover", boxShadow: "0 8px 24px rgba(0,0,0,0.35), inset 0 1px 1px rgba(255,255,255,0.3)" }} />
+            ) : (
+              <div style={{ position: "relative", width: 84, height: 84, borderRadius: "50%", background: avatarBg, boxShadow: "0 8px 24px rgba(0,0,0,0.35), inset 0 1px 1px rgba(255,255,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30, fontWeight: 700, color: "#fff" }}>{initials}</div>
+            )}
+            <div style={{ position: "absolute", bottom: 0, insetInlineEnd: 0, width: 27, height: 27, borderRadius: "50%", background: "linear-gradient(135deg,#6E8BFF,#9A6CFF)", border: "2px solid #12102A", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 3px 8px rgba(0,0,0,0.4)" }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z" /><circle cx="12" cy="13" r="3.2" /></svg>
+            </div>
+            {uploading && (
+              <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "rgba(8,6,20,0.62)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: 26, height: 26, borderRadius: "50%", border: "2.5px solid rgba(255,255,255,0.25)", borderTopColor: "#fff", animation: "spin 0.8s linear infinite" }} />
+              </div>
+            )}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" onChange={onPickPhoto} style={{ display: "none" }} />
           <div style={{ fontSize: 23, fontWeight: 800, letterSpacing: "-0.3px" }}>{name}</div>
           <div style={{ fontSize: 13.5, color: "rgba(236,231,250,0.6)", marginTop: 4, direction: "ltr" }}>{email}</div>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 9, padding: "4px 11px", borderRadius: 999, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
@@ -130,7 +162,7 @@ export default function ProfilePage() {
         </button>
       </div>
 
-      <BottomNav active="profile" />
+      <BottomNav active="none" />
     </main>
   );
 }

@@ -3,7 +3,8 @@
 import { createClient } from "./client";
 import { DiaryType } from "@/lib/theme";
 
-export type Lucidity = "low" | "med" | "high";
+// Lucidity is a 0-10 scale stored as text ("0" = not lucid at all … "10" = fully lucid).
+export type Lucidity = string;
 export type Visibility = "private" | "public" | "custom";
 
 export type DbEntry = {
@@ -37,6 +38,7 @@ export type DbProfile = {
   id: string;
   email: string;
   display_name: string | null;
+  avatar_url?: string | null;
   role: "user" | "admin";
   status: "pending" | "active" | "suspended";
   language: "he" | "en";
@@ -44,6 +46,7 @@ export type DbProfile = {
 };
 
 export async function getProfile(): Promise<DbProfile | null> {
+  if (demoEnabled()) return demoProfileObj();
   const supabase = createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return null;
@@ -51,7 +54,29 @@ export async function getProfile(): Promise<DbProfile | null> {
   return (data as DbProfile) ?? null;
 }
 
+// Upload a profile photo to the public avatars bucket, return its public URL.
+export async function uploadAvatar(file: File): Promise<string> {
+  const supabase = createClient();
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) throw new Error("not signed in");
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+  const path = `${auth.user.id}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from("avatars").upload(path, file, { upsert: true, contentType: file.type || "image/jpeg" });
+  if (error) throw error;
+  const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+export async function setProfileAvatar(url: string | null): Promise<void> {
+  const supabase = createClient();
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) throw new Error("not signed in");
+  const { error } = await supabase.from("profiles").update({ avatar_url: url }).eq("id", auth.user.id);
+  if (error) throw error;
+}
+
 export async function listEntries(): Promise<DbEntry[]> {
+  if (demoEnabled()) return demoPersonalEntries();
   const supabase = createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return [];
@@ -66,6 +91,7 @@ export async function listEntries(): Promise<DbEntry[]> {
 }
 
 export async function getEntry(id: string): Promise<DbEntry | null> {
+  if (demoEnabled()) return demoPersonalEntries().find((e) => e.id === id) ?? null;
   const supabase = createClient();
   const { data } = await supabase.from("entries").select("*").eq("id", id).maybeSingle();
   return (data as DbEntry) ?? null;
@@ -96,6 +122,7 @@ export async function createEntry(input: {
   lucidity?: Lucidity | null;
   visibility: Visibility;
   file?: File | null;
+  created_at?: string;
 }): Promise<DbEntry> {
   const supabase = createClient();
   const { data: auth } = await supabase.auth.getUser();
@@ -114,6 +141,7 @@ export async function createEntry(input: {
       lucidity: input.lucidity ?? null,
       visibility: input.visibility,
       media_url,
+      ...(input.created_at ? { created_at: input.created_at } : {}),
     })
     .select()
     .single();
@@ -130,6 +158,7 @@ export async function updateEntry(
     lucidity?: Lucidity | null;
     visibility?: Visibility;
     media_url?: string | null;
+    created_at?: string;
   }
 ): Promise<DbEntry> {
   const supabase = createClient();
@@ -178,6 +207,7 @@ export async function setEntrySharing(id: string, opts: { shared: boolean; anony
 }
 
 export async function listSharedEntries(): Promise<SharedEntry[]> {
+  if (demoEnabled()) return demoSharedList();
   const supabase = createClient();
   const { data, error } = await supabase.rpc("list_shared_entries");
   if (error) throw error;
@@ -185,11 +215,147 @@ export async function listSharedEntries(): Promise<SharedEntry[]> {
 }
 
 export async function getSharedEntry(id: string): Promise<SharedEntry | null> {
+  if (demoEnabled()) return demoSharedList().find((e) => e.id === id) ?? null;
   const supabase = createClient();
   const { data, error } = await supabase.rpc("get_shared_entry", { p_id: id });
   if (error) return null;
   const rows = (data ?? []) as SharedEntry[];
   return rows[0] ?? null;
+}
+
+export type MindDot = { type: DiaryType; mine: boolean };
+
+// Preview-only demo mode. Enabled with ?demo (persisted), disabled with ?nodemo.
+// Never active on the production host — purely for showing a populated weave in preview.
+// Showcase = a login-free preview deployment (set NEXT_PUBLIC_SHOWCASE=1 on the
+// preview Netlify site). Everything runs on demo data so the client can browse
+// every screen without signing in. Production never sets this.
+export const SHOWCASE = process.env.NEXT_PUBLIC_SHOWCASE === "1";
+
+// Demo/showcase data may ONLY appear when SHOWCASE is set (the preview site) or on a
+// local dev host. Any real domain — production or a future custom domain — always
+// shows real customer data, so demo can never leak to live users.
+function isLocalHost(h: string): boolean {
+  return h === "localhost" || h === "127.0.0.1" || h.endsWith(".local")
+    || /^192\.168\./.test(h) || /^10\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h);
+}
+
+export function demoEnabled(): boolean {
+  if (SHOWCASE) return true;
+  if (typeof window === "undefined") return false;
+  if (!isLocalHost(window.location.hostname)) return false; // real domains → always real data
+  // Local dev: demo on by default, toggle with ?demo / ?nodemo (persisted).
+  const s = window.location.search;
+  if (s.includes("nodemo")) { window.localStorage.setItem("dreamers_demo_off", "1"); return false; }
+  if (s.includes("demo")) { window.localStorage.removeItem("dreamers_demo_off"); return true; }
+  if (window.localStorage.getItem("dreamers_demo_off") === "1") return false;
+  return true;
+}
+
+// ---- Demo content for showcase / preview ----
+const DEMO_TITLES = ["טיסה מעל הים", "בית הילדות", "מבוך אינסופי", "שיחה עם סבתא", "נפילה איטית", "יער זוהר", "מרוץ בזמן", "דלת נסתרת", "ריקוד על המים", "עיר תת־ימית", "כנפיים חדשות", "גשר הכוכבים", "חדר ללא קירות", "אור בקצה", "מסע אל השחר"];
+const DEMO_AUTHORS = ["מיכל", "יונתן", "נועה", "דניאל", "תמר", "איתי", null, "שירה", null, "אורי"];
+
+function demoDateISO(daysAgo: number, hour = 3): string {
+  return new Date(Date.now() - daysAgo * 86400000 - hour * 3600000).toISOString();
+}
+
+function demoPersonalEntries(): DbEntry[] {
+  const types: DiaryType[] = ["dream", "dream", "idea", "dream", "creation", "dream", "reality", "dream", "idea", "record", "dream", "creation", "dream", "reality", "dream"];
+  return types.map((type, i) => ({
+    id: `demo-p-${i}`,
+    type,
+    title: DEMO_TITLES[i % DEMO_TITLES.length],
+    body: "רשומה לדוגמה במצב תצוגה.",
+    lucidity: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(5 + 3 * Math.sin(i * 1.1))))) : null,
+    media_url: null,
+    visibility: i % 5 === 0 ? "public" : "private",
+    shared_anonymous: false,
+    shared_media_url: null,
+    created_at: demoDateISO(i * 2 + (i % 3)),
+  }));
+}
+
+function demoSharedList(): SharedEntry[] {
+  const types: DiaryType[] = ["dream", "creation", "dream", "idea", "dream", "reality", "dream", "record", "creation", "dream", "idea", "dream"];
+  return types.map((type, i) => {
+    const author = DEMO_AUTHORS[i % DEMO_AUTHORS.length];
+    return {
+      id: `demo-s-${i}`,
+      type,
+      title: DEMO_TITLES[(i + 3) % DEMO_TITLES.length],
+      body: "חלום ששותף לקהילה במצב תצוגה. הפרטים המלאים נראים רק בקהילה.",
+      lucidity: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(6 + 3 * Math.sin(i * 0.9))))) : null,
+      shared_media_url: null,
+      created_at: demoDateISO(i + 1),
+      shared_anonymous: author === null,
+      author_name: author,
+    };
+  });
+}
+
+function demoProfileObj(): DbProfile {
+  return { id: "demo-user", email: "guest@dreamers.app", display_name: "אורח/ת", avatar_url: null, role: "user", status: "active", language: "he", created_at: demoDateISO(120) };
+}
+
+const DEMO_TYPES: DiaryType[] = ["dream", "creation", "idea", "reality", "record"];
+function demoDots(mine = 15, others = 180): MindDot[] {
+  const out: MindDot[] = [];
+  for (let i = 0; i < mine; i++) out.push({ type: DEMO_TYPES[i % 5], mine: true });
+  for (let i = 0; i < others; i++) out.push({ type: DEMO_TYPES[(i * 3 + 1) % 5], mine: false });
+  return out;
+}
+
+// Every entry as an anonymous dot (type + is-it-mine). No content — for the weave only.
+export async function listConsciousnessDots(): Promise<MindDot[]> {
+  if (demoEnabled()) return demoDots();
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("consciousness_dots");
+  if (error) return [];
+  return (data ?? []) as MindDot[];
+}
+
+// Rich sample history for the dashboard preview: ~2 years of dreams with a
+// wandering lucidity so the meter reads like a live stock chart. Never linked
+// anywhere and never touches the DB — purely to demo the charts.
+function demoStatsEntries(): DbEntry[] {
+  const now = Date.now();
+  const N = 280;
+  const others: DiaryType[] = ["creation", "idea", "reality", "record"];
+  const out: DbEntry[] = [];
+  for (let i = 0; i < N; i++) {
+    const frac = i / (N - 1);
+    const daysAgo = Math.round(Math.pow(1 - frac, 1.5) * 730);
+    const t = now - daysAgo * 86400000 - (i % 24) * 3600000;
+    const isDream = i % 4 !== 0;
+    const type: DiaryType = isDream ? "dream" : others[i % others.length];
+    const raw = 5 + 3 * Math.sin(i * 0.17) + 1.8 * Math.sin(i * 0.045) + ((i % 9) - 4) * 0.35;
+    const v = Math.max(0, Math.min(10, Math.round(raw)));
+    out.push({
+      id: `demo-${i}`, type, title: "חלום לדוגמה", body: "",
+      lucidity: isDream ? String(v) : null, media_url: null,
+      visibility: "private", shared_anonymous: false, shared_media_url: null,
+      created_at: new Date(t).toISOString(),
+    });
+  }
+  return out;
+}
+
+// Dashboard data source — demo history in preview, real entries otherwise.
+export async function listStatsEntries(): Promise<DbEntry[]> {
+  if (demoEnabled()) return demoStatsEntries();
+  return listEntries();
+}
+
+export type CommunityStats = { members: number; shared: number; week: number };
+
+export async function getCommunityStats(): Promise<CommunityStats> {
+  if (demoEnabled()) return { members: 42, shared: 180, week: 12 };
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("community_stats");
+  const row = (Array.isArray(data) ? data[0] : data) as CommunityStats | undefined;
+  if (error || !row) return { members: 0, shared: 0, week: 0 };
+  return { members: row.members ?? 0, shared: row.shared ?? 0, week: row.week ?? 0 };
 }
 
 // ---------- Admin (real users) ----------

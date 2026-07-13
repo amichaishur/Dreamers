@@ -5,12 +5,119 @@ import StarField from "@/components/StarField";
 import BottomNav from "@/components/BottomNav";
 import { useLang } from "@/lib/i18n";
 import { DIARIES } from "@/lib/diary";
-import { listEntries, DbEntry } from "@/lib/supabase/data";
-import { computeStats } from "@/lib/stats";
+import { listStatsEntries, DbEntry } from "@/lib/supabase/data";
+import { computeStats, LucidityPoint } from "@/lib/stats";
 
 const BG = "linear-gradient(168deg,#0C0C1E 0%,#160F30 52%,#241A44 100%)";
 const card: React.CSSProperties = { borderRadius: 22, background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.09)", marginBottom: 9 };
 const DIARY_COLOR: Record<string, string> = Object.fromEntries(DIARIES.map((d) => [d.key, d.color]));
+
+type LucRange = "month" | "year" | "5y";
+const RANGE_DAYS: Record<LucRange, number> = { month: 30, year: 365, "5y": 1825 };
+
+/** Stock-style lucidity graph: purple line + dots over time, 0-10 scale. */
+function LucidityChart({ points, lang, t }: { points: LucidityPoint[]; lang: string; t: (k: string) => string }) {
+  const [range, setRange] = useState<LucRange>("month");
+  const now = Date.now();
+  const winStart = now - RANGE_DAYS[range] * 86400000;
+  const win = points.filter((pt) => pt.t >= winStart);
+  const prev = points.filter((pt) => pt.t >= winStart - RANGE_DAYS[range] * 86400000 && pt.t < winStart);
+
+  const avg = win.length ? win.reduce((s, x) => s + x.v, 0) / win.length : 0;
+  const prevAvg = prev.length ? prev.reduce((s, x) => s + x.v, 0) / prev.length : 0;
+  const changePct = prev.length && prevAvg > 0 ? Math.round(((avg - prevAvg) / prevAvg) * 100) : null;
+  const latest = win.length ? win[win.length - 1].v : null;
+  // Brand purple line (stock-style shape, our colours).
+  const lineC = "#B79CEB";
+
+  // Chart geometry (viewBox space)
+  const W = 340, H = 150, padL = 22, padR = 34, padT = 12, padB = 22;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const t0 = win.length ? Math.min(win[0].t, now - RANGE_DAYS[range] * 86400000 * 0.15) : winStart;
+  const t1 = now;
+  const px = (tm: number) => padL + (t1 === t0 ? innerW / 2 : ((tm - t0) / (t1 - t0)) * innerW);
+  const py = (v: number) => padT + (1 - v / 10) * innerH;
+  const linePts = win.map((pt) => `${px(pt.t).toFixed(1)},${py(pt.v).toFixed(1)}`).join(" ");
+  const areaPts = win.length ? `${px(win[0].t).toFixed(1)},${py(0).toFixed(1)} ${linePts} ${px(win[win.length - 1].t).toFixed(1)},${py(0).toFixed(1)}` : "";
+
+  const ticks = [0, 0.33, 0.66].map((f) => {
+    const tm = t0 + (t1 - t0) * f;
+    return { x: px(tm), label: new Date(tm).toLocaleDateString(lang === "en" ? "en-US" : "he-IL", { day: "numeric", month: "numeric" }) };
+  });
+
+  const tab = (on: boolean): React.CSSProperties => ({ padding: "5px 11px", borderRadius: 9, fontSize: 11.5, fontWeight: on ? 700 : 500, border: on ? "1px solid rgba(191,211,255,0.4)" : "1px solid transparent", background: on ? "rgba(126,150,255,0.14)" : "transparent", color: on ? "#BFD3FF" : "rgba(236,231,250,0.5)", cursor: "pointer" });
+
+  return (
+    <div style={{ ...card, padding: "15px 18px 13px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B79CEB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><polyline points="2 12 6 12 9 5 14 19 17 12 22 12" /></svg>
+            <span style={{ fontSize: 15, fontWeight: 700 }}>{t("db.lucMeter")}</span>
+          </div>
+          <div style={{ fontSize: 11, color: "rgba(236,231,250,0.5)", marginTop: 2 }}>{t("db.lucSub")}</div>
+        </div>
+        <div style={{ display: "flex", gap: 2, padding: 3, borderRadius: 11, background: "rgba(0,0,0,0.25)", flex: "0 0 auto" }}>
+          <button style={tab(range === "month")} onClick={() => setRange("month")}>{t("db.rMonth")}</button>
+          <button style={tab(range === "year")} onClick={() => setRange("year")}>{t("db.rYear")}</button>
+          <button style={tab(range === "5y")} onClick={() => setRange("5y")}>{t("db.r5y")}</button>
+        </div>
+      </div>
+
+      {win.length === 0 ? (
+        <div style={{ textAlign: "center", color: "rgba(236,231,250,0.45)", fontSize: 12.5, padding: "34px 0" }}>{t("db.lucEmpty")}</div>
+      ) : (
+        <>
+          <div dir="ltr" style={{ width: "100%" }}>
+            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
+              <defs>
+                <linearGradient id="lucArea" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stopColor={lineC} stopOpacity="0.28" />
+                  <stop offset="1" stopColor={lineC} stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              {[0, 2, 4, 6, 8, 10].map((v) => (
+                <g key={v}>
+                  <line x1={padL} x2={W - padR} y1={py(v)} y2={py(v)} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+                  <text x={padL - 6} y={py(v) + 3} textAnchor="end" fontSize="8.5" fill="rgba(236,231,250,0.45)">{v}</text>
+                </g>
+              ))}
+              {latest !== null && <line x1={padL} x2={W - padR} y1={py(latest)} y2={py(latest)} stroke={lineC} strokeWidth="0.7" strokeDasharray="2 3" opacity="0.5" />}
+              {win.length > 1 && <polygon points={areaPts} fill="url(#lucArea)" />}
+              {win.length > 1 && <polyline points={linePts} fill="none" stroke={lineC} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 4px ${lineC}99)` }} />}
+              {win.length <= 45 && win.map((pt, i) => (
+                <circle key={i} cx={px(pt.t)} cy={py(pt.v)} r={win.length > 25 ? 1.8 : 2.6} fill={lineC} stroke="#160F30" strokeWidth="1" />
+              ))}
+              {latest !== null && (
+                <circle cx={px(win[win.length - 1].t)} cy={py(latest)} r={3.4} fill="#fff" stroke={lineC} strokeWidth="1.6" />
+              )}
+              {latest !== null && (
+                <g>
+                  <rect x={W - padR + 3} y={py(latest) - 9} width={28} height={18} rx={5} fill={lineC} />
+                  <text x={W - padR + 17} y={py(latest) + 3.5} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="#0C0C1E">{Number.isInteger(latest) ? latest : latest.toFixed(1)}</text>
+                </g>
+              )}
+              {ticks.map((tk, i) => (
+                <text key={i} x={tk.x} y={H - 7} textAnchor="middle" fontSize="8.5" fill="rgba(236,231,250,0.42)">{tk.label}</text>
+              ))}
+              <text x={W - padR} y={H - 7} textAnchor="end" fontSize="8.5" fontWeight="700" fill="#BFD3FF">{t("db.today")}</text>
+            </svg>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+            {changePct !== null ? (
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: changePct >= 0 ? "#7FD6A2" : "#F0A4A4" }}>
+                {changePct >= 0 ? "↑" : "↓"} {Math.abs(changePct)}% <span style={{ fontWeight: 400, color: "rgba(236,231,250,0.55)" }}>{t("db.vsPrev")}</span>
+              </span>
+            ) : <span />}
+            <span style={{ fontSize: 12.5, color: "rgba(236,231,250,0.55)" }}>
+              {t("db.overallAvg")} <span style={{ fontSize: 15, fontWeight: 800, color: "#C9B6F2", fontVariantNumeric: "tabular-nums" }}>{avg.toFixed(1).replace(/\.0$/, "")}</span>
+            </span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const { t, lang } = useLang();
@@ -18,7 +125,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let alive = true;
-    listEntries().then((rows) => { if (alive) setEntries(rows); }).catch(() => {});
+    listStatsEntries().then((rows) => { if (alive) setEntries(rows); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -54,11 +161,15 @@ export default function DashboardPage() {
   });
   const conic = `conic-gradient(${segments.join(",")})`;
 
-  const maxLuc = Math.max(1, stats.byLucidity.low, stats.byLucidity.med, stats.byLucidity.high);
-  const clarity = (["high", "med", "low"] as const).map((k) => ({ key: k, count: stats.byLucidity[k], w: `${Math.round((stats.byLucidity[k] / maxLuc) * 100)}%` }));
-
   const mostActiveType = DIARIES.reduce((best, d) => (stats.byType[d.key] > stats.byType[best.key] ? d : best), DIARIES[0]);
   const hasMostActive = stats.byType[mostActiveType.key] > 0;
+
+  const DREAM = "#B79CEB";
+  const maxHist = Math.max(1, ...stats.lucidityHist);
+  const hasLucid = stats.lucidityCount > 0;
+  const wdLabels = lang === "en" ? ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] : ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
+  const maxWd = Math.max(1, ...stats.dreamsByWeekday);
+  const peakWd = stats.dreamsByWeekday.indexOf(Math.max(...stats.dreamsByWeekday));
 
   return (
     <main style={{ position: "relative", minHeight: "100svh", overflow: "hidden", background: BG, color: "#ECE7FA" }}>
@@ -130,23 +241,58 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div style={{ ...card, padding: "14px 18px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 13 }}>
-            <span style={{ width: 9, height: 9, borderRadius: "50%", background: "#B79CEB", boxShadow: "0 0 7px rgba(183,156,235,0.8)" }} />
-            <div style={{ fontSize: 15, fontWeight: 700 }}>{t("db.clarity")}</div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-            {clarity.map((c) => (
-              <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{ fontSize: 13, fontWeight: 500, width: 62, flex: "0 0 auto", color: "rgba(236,231,250,0.82)" }}>{t(`luc.${c.key}`)}</span>
-                <div style={{ flex: 1, height: 9, borderRadius: 5, background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
-                  <div style={{ width: c.w, height: "100%", borderRadius: 5, background: "linear-gradient(90deg, rgba(183,156,235,0.55), #B79CEB)", boxShadow: "0 0 8px rgba(183,156,235,0.5)" }} />
-                </div>
-                <span style={{ fontSize: 13, fontWeight: 700, color: "#C9B6F2", width: 18, textAlign: "start", flex: "0 0 auto", fontVariantNumeric: "tabular-nums" }}>{c.count}</span>
-              </div>
-            ))}
+        {/* ---------- Dream metrics section ---------- */}
+        <div style={{ display: "flex", alignItems: "center", gap: 9, margin: "18px 2px 11px" }}>
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={DREAM} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ filter: `drop-shadow(0 0 5px ${DREAM}aa)`, flex: "0 0 auto" }}><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: "-0.3px" }}>{t("db.dreamSection")}</div>
+            <div style={{ fontSize: 11.5, color: "rgba(236,231,250,0.55)", marginTop: 1 }}>{t("db.dreamSectionSub")}</div>
           </div>
         </div>
+
+        <LucidityChart points={stats.lucidityPoints} lang={lang} t={t} />
+
+        {/* Lucidity distribution */}
+        <div style={{ ...card, padding: "15px 18px 14px" }}>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>{t("db.lucidDist")}</div>
+          <div style={{ fontSize: 11, color: "rgba(236,231,250,0.5)", marginTop: 2, marginBottom: 14 }}>{t("db.lucidDistSub")}</div>
+          {hasLucid ? (
+            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 4, height: 96 }}>
+              {stats.lucidityHist.map((c, level) => {
+                const col = `rgba(183,156,235,${(0.32 + 0.68 * (level / 10)).toFixed(2)})`;
+                return (
+                  <div key={level} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, height: "100%", justifyContent: "flex-end" }}>
+                    <div style={{ fontSize: 9.5, fontWeight: 700, color: c ? "#C9B6F2" : "rgba(236,231,250,0.3)", fontVariantNumeric: "tabular-nums" }}>{c || ""}</div>
+                    <div style={{ width: "100%", maxWidth: 18, height: `${(4 + (c / maxHist) * 62).toFixed(0)}px`, borderRadius: 5, background: col, boxShadow: c ? `0 0 8px ${col}` : "none", transformOrigin: "bottom", animation: `growY 0.7s cubic-bezier(.2,.8,.2,1) ${(0.03 * level).toFixed(2)}s both` }} />
+                    <div style={{ fontSize: 9.5, fontWeight: 600, color: "rgba(236,231,250,0.5)" }}>{level}</div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ textAlign: "center", color: "rgba(236,231,250,0.45)", fontSize: 12.5, padding: "28px 0" }}>{t("db.dreamEmpty")}</div>
+          )}
+        </div>
+
+        {/* Dreams by weekday */}
+        {stats.dreamCount > 0 && (
+          <div style={{ ...card, padding: "15px 18px 14px" }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>{t("db.byWeekday")}</div>
+            <div style={{ fontSize: 11, color: "rgba(236,231,250,0.5)", marginTop: 2, marginBottom: 14 }}>{t("db.byWeekdaySub")}</div>
+            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 7, height: 92 }}>
+              {stats.dreamsByWeekday.map((c, i) => {
+                const peak = i === peakWd && c > 0;
+                return (
+                  <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 5, height: "100%", justifyContent: "flex-end" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: peak ? "#C9B6F2" : "rgba(236,231,250,0.5)", fontVariantNumeric: "tabular-nums" }}>{c || ""}</div>
+                    <div style={{ width: "100%", maxWidth: 26, height: `${(4 + (c / maxWd) * 60).toFixed(0)}px`, borderRadius: 6, background: peak ? "linear-gradient(180deg,#D3C4F5,#9A8CFF)" : "linear-gradient(180deg,#8E7AC8,#6E5B9E)", boxShadow: peak ? "0 0 10px rgba(154,124,235,0.7)" : "none", transformOrigin: "bottom", animation: `growY 0.7s cubic-bezier(.2,.8,.2,1) ${(0.04 * i).toFixed(2)}s both` }} />
+                    <div style={{ fontSize: 11, fontWeight: peak ? 700 : 500, color: peak ? "#C9B6F2" : "rgba(236,231,250,0.5)" }}>{wdLabels[i]}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {hasMostActive && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 9, padding: 11, borderRadius: 16, background: "rgba(183,156,235,0.08)", border: "1px solid rgba(183,156,235,0.2)", fontSize: 13.5, color: "rgba(236,231,250,0.72)" }}>

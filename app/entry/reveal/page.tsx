@@ -15,13 +15,14 @@ const HE: Record<DiaryType, [string, string]> = {
   dream: ["החלום", "נשזר"],
   idea: ["הרעיון", "נשזר"],
   reality: ["המציאות", "נשזרה"],
+  record: ["הרשומה", "נשזרה"],
 };
 
 function RevealInner() {
   const sp = useSearchParams();
   const { t, lang } = useLang();
   const raw = sp.get("diary") || "dream";
-  const key = (["creation", "dream", "idea", "reality"].includes(raw) ? raw : "dream") as DiaryType;
+  const key = (["creation", "dream", "idea", "reality", "record"].includes(raw) ? raw : "dream") as DiaryType;
   const total = Number(sp.get("count") ?? 0) || 0;
   const entryId = sp.get("id");
   const viewHref = entryId ? `/entry/${entryId}` : "/journals";

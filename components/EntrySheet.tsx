@@ -34,12 +34,13 @@ function DiaryPickModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div style={{ position: "absolute", inset: 0, zIndex: 70 }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 70 }}>
       {/* scrim — the real screen (התודעה שלי) stays partially visible behind */}
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(4,5,16,0.5)", backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)", animation: "fadeIn 0.25s ease both" }} />
 
-      {/* compact bottom sheet */}
-      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "10px 16px 18px", borderRadius: "26px 26px 0 0", background: "linear-gradient(180deg, rgba(28,26,52,0.96), rgba(12,12,28,0.98))", backdropFilter: "blur(26px)", WebkitBackdropFilter: "blur(26px)", borderTop: "1px solid rgba(255,255,255,0.13)", boxShadow: "0 -22px 60px rgba(0,0,0,0.55)", animation: "sheetUp 0.4s cubic-bezier(.2,.85,.25,1) both" }}>
+      {/* compact bottom sheet — anchored to the viewport bottom, centered in the app frame */}
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
+      <div style={{ width: "100%", maxWidth: 430, pointerEvents: "auto", padding: "10px 16px 18px", borderRadius: "26px 26px 0 0", background: "linear-gradient(180deg, rgba(28,26,52,0.96), rgba(12,12,28,0.98))", backdropFilter: "blur(26px)", WebkitBackdropFilter: "blur(26px)", borderTop: "1px solid rgba(255,255,255,0.13)", boxShadow: "0 -22px 60px rgba(0,0,0,0.55)", animation: "sheetUp 0.4s cubic-bezier(.2,.85,.25,1) both" }}>
         <div style={{ width: 40, height: 5, borderRadius: 999, background: "rgba(255,255,255,0.24)", margin: "0 auto 13px" }} />
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -66,6 +67,7 @@ function DiaryPickModal({ onClose }: { onClose: () => void }) {
             );
           })}
         </div>
+      </div>
       </div>
     </div>
   );

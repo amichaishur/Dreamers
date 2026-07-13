@@ -4,13 +4,37 @@ import { useEffect, useRef } from "react";
 import { DiaryType } from "@/lib/theme";
 import { rgba, mix } from "@/lib/color";
 
+export type SphereNode = { type: DiaryType; mine: boolean };
+
 type Props = {
   dots: Record<DiaryType, string>;
   lineColor: string;
   count?: number;
   dotScale?: number;
   frozen?: boolean;
+  nodes?: SphereNode[];      // real entries; when present drives count + colors
+  dimOthers?: boolean;       // "my consciousness" mode: dim non-mine dots
 };
+
+// Spread mine dots evenly around the sphere so they don't clump at one pole.
+function arrange(nodes: SphereNode[]): SphereNode[] {
+  const N = nodes.length;
+  const mine: SphereNode[] = [];
+  const other: SphereNode[] = [];
+  nodes.forEach((n) => (n.mine ? mine : other).push(n));
+  const out = new Array<SphereNode | undefined>(N);
+  const taken = new Set<number>();
+  const m = mine.length;
+  mine.forEach((n, k) => {
+    let slot = Math.round((k + 0.5) * (N / Math.max(1, m))) % N;
+    while (taken.has(slot)) slot = (slot + 1) % N;
+    taken.add(slot);
+    out[slot] = n;
+  });
+  let oi = 0;
+  for (let s = 0; s < N; s++) if (!out[s]) out[s] = other[oi++];
+  return out as SphereNode[];
+}
 
 function geometry(N: number) {
   const golden = Math.PI * (3 - Math.sqrt(5));
@@ -39,8 +63,9 @@ function geometry(N: number) {
   return { pos, edges };
 }
 
-export default function WeaveSphere({ dots, lineColor, count = 56, dotScale = 1, frozen = false }: Props) {
+export default function WeaveSphere({ dots, lineColor, count = 56, dotScale = 1, frozen = false, nodes, dimOthers = false }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const nodeKey = nodes ? nodes.map((n) => (n.mine ? "1" : "0") + n.type[0]).join("") : "";
 
   useEffect(() => {
     const canvas = ref.current;
@@ -49,7 +74,11 @@ export default function WeaveSphere({ dots, lineColor, count = 56, dotScale = 1,
       typeof window !== "undefined" && new URLSearchParams(window.location.search).has("shot");
     const isFrozen = frozen || forceStatic;
     const types: DiaryType[] = ["creation", "dream", "idea", "reality"];
-    const geo = geometry(count);
+    const arranged = nodes && nodes.length ? arrange(nodes) : null;
+    const N = arranged ? arranged.length : count;
+    const colorArr = arranged ? arranged.map((n) => dots[n.type] || "#9aa") : null;
+    const briArr = arranged ? arranged.map((n) => (dimOthers && !n.mine ? 0.22 : 1)) : null;
+    const geo = geometry(N);
     let raf = 0;
     let stopped = false;
 
@@ -75,14 +104,20 @@ export default function WeaveSphere({ dots, lineColor, count = 56, dotScale = 1,
       const proj = pos.map((p, i) => {
         const x1 = p.x * cosY - p.z * sinY, z1 = p.x * sinY + p.z * cosY, y1 = p.y;
         const y2 = y1 * cosT - z1 * sinT, z2 = y1 * sinT + z1 * cosT;
-        return { sx: cx + x1 * R, sy: cy + y2 * R, depth: (z2 + 1) / 2, color: dots[types[i % 4]] || "#9aa", seed: ((i * 37) % 100) / 15 };
+        const color = colorArr ? colorArr[i] : dots[types[i % 4]] || "#9aa";
+        const bri = briArr ? briArr[i] : 1;
+        return { sx: cx + x1 * R, sy: cy + y2 * R, depth: (z2 + 1) / 2, color, bri, seed: ((i * 37) % 100) / 15 };
       });
 
       ctx.globalCompositeOperation = "source-over";
       ctx.lineWidth = 1;
       for (const [a, b] of edges) {
         const A = proj[a], B = proj[b], dep = (A.depth + B.depth) / 2;
-        ctx.strokeStyle = rgba(lineColor, 0.015 + dep * 0.07);
+        const eb = (A.bri + B.bri) / 2;
+        // Faint mesh: a subtle background weave texture that never spotlights specific
+        // dots. Depth gives gentle variation; brightness barely nudges it so "my" dots
+        // aren't visibly wired together into a constellation.
+        ctx.strokeStyle = rgba(lineColor, (0.008 + dep * 0.026) * (0.5 + 0.5 * eb));
         ctx.beginPath(); ctx.moveTo(A.sx, A.sy); ctx.lineTo(B.sx, B.sy); ctx.stroke();
       }
 
@@ -91,8 +126,8 @@ export default function WeaveSphere({ dots, lineColor, count = 56, dotScale = 1,
       for (const i of order) {
         const p = proj[i], dep = p.depth;
         const shim = 0.88 + 0.12 * Math.sin(time * 0.0017 + p.seed);
-        const size = (4 + dep * dep * 11) * (0.95 + 0.05 * shim) * dotScale;
-        const a = Math.min(1, (0.13 + dep * dep * 0.92) * shim);
+        const size = (4 + dep * dep * 11) * (0.95 + 0.05 * shim) * dotScale * (0.6 + 0.4 * p.bri);
+        const a = Math.min(1, (0.13 + dep * dep * 0.92) * shim * p.bri);
         const pastel = mix(p.color, "#ffffff", 0.28);
         const g = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, Math.max(0.5, size));
         g.addColorStop(0, rgba(pastel, a));
@@ -111,7 +146,7 @@ export default function WeaveSphere({ dots, lineColor, count = 56, dotScale = 1,
         ctx.beginPath(); ctx.arc(p.sx, p.sy, Math.max(0.5, cr), 0, Math.PI * 2); ctx.fill();
         if (dep > 0.4) {
           const tr = size * 0.16;
-          ctx.fillStyle = rgba("#ffffff", Math.min(0.95, (dep - 0.3) * 1.0) * shim);
+          ctx.fillStyle = rgba("#ffffff", Math.min(0.95, (dep - 0.3) * 1.0) * shim * p.bri);
           ctx.beginPath(); ctx.arc(p.sx, p.sy, Math.max(0.4, tr), 0, Math.PI * 2); ctx.fill();
         }
       }
@@ -125,7 +160,8 @@ export default function WeaveSphere({ dots, lineColor, count = 56, dotScale = 1,
     }
     raf = requestAnimationFrame(draw);
     return () => { stopped = true; cancelAnimationFrame(raf); };
-  }, [dots, lineColor, count, dotScale, frozen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dots, lineColor, count, dotScale, frozen, nodeKey, dimOthers]);
 
   return <canvas ref={ref} style={{ position: "relative", width: "100%", height: "100%", display: "block" }} />;
 }

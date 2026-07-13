@@ -36,7 +36,7 @@ export default function EditEntryPage() {
       diaryKey={entry.type as DiaryKey}
       headerKey="ef.editIn"
       submitKey="ef.save"
-      initial={{ title: entry.title, body: entry.body, lucidity: entry.lucidity, shared: entry.visibility === "public", anonymous: entry.shared_anonymous }}
+      initial={{ title: entry.title, body: entry.body, lucidity: entry.lucidity, shared: entry.visibility === "public", anonymous: entry.shared_anonymous, createdAt: entry.created_at }}
       existingMediaName={existingMediaName}
       onBack={() => router.push(`/entry/${entry.id}`)}
       onSubmit={async (v) => {
@@ -49,6 +49,7 @@ export default function EditEntryPage() {
           title: v.title,
           body: v.body,
           lucidity: entry.type === "dream" ? v.lucidity : null,
+          created_at: v.createdAt,
           ...(media_url !== undefined ? { media_url } : {}),
         });
         // Reconcile sharing (also refreshes the shared image URL if the file changed).
