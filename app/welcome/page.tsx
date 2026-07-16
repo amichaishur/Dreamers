@@ -100,7 +100,6 @@ function WelcomeInner() {
               <span style={{ fontSize: 16, fontWeight: 600, color: "#1A1530" }}>{t("wc.google")}</span>
               <div style={{ position: "absolute", top: 0, bottom: 0, width: 42, background: "linear-gradient(100deg, transparent, rgba(255,255,255,0.8), transparent)", animation: "sheen 5.5s ease-in-out 1.5s infinite" }} />
             </button>
-            <div style={{ fontSize: 14.5, fontWeight: 500, color: "rgba(236,231,250,0.74)", cursor: "pointer", padding: "6px 4px", borderBottom: "1px solid rgba(236,231,250,0.22)" }}>{t("wc.email")}</div>
           </div>
 
           <div style={{ position: "absolute", bottom: 22, left: 0, right: 0, textAlign: "center", fontSize: 12, letterSpacing: 0.4, color: "rgba(236,231,250,0.42)", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>

@@ -122,6 +122,14 @@ declare
   is_boot boolean := (new.email = 'amichaishur@gmail.com');
   inv     public.invitations%rowtype;
 begin
+  -- Registration is Google-only, enforced in the database. The Supabase "which providers
+  -- are enabled" setting is a dashboard toggle that this repo cannot see and that can
+  -- silently drift, so the rule is pinned here too: a non-Google signup is rejected
+  -- outright (the raise rolls back the auth.users insert, so no account is created).
+  if coalesce(new.raw_app_meta_data->>'provider', '') <> 'google' then
+    raise exception 'Registration is by Google sign-in only';
+  end if;
+
   select * into inv from public.invitations where lower(email) = lower(new.email) limit 1;
 
   insert into public.profiles (id, email, display_name, role, status)
