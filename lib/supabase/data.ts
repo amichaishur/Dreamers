@@ -102,7 +102,11 @@ export async function uploadAttachment(file: File): Promise<string> {
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) throw new Error("not signed in");
   const safeName = file.name.replace(/[^a-zA-Z0-9_.-]/g, "_");
-  const path = `${auth.user.id}/${crypto.randomUUID()}-${safeName}`;
+  // Random, non-identifying path. The media bucket's RLS authorises on the storage
+  // `owner` column (= uploader), NOT on the path, so the path must not carry the
+  // user id — otherwise a shared entry's signed URL would reveal who wrote it,
+  // defeating anonymous sharing.
+  const path = `${crypto.randomUUID()}-${safeName}`;
   const { error } = await supabase.storage.from("media").upload(path, file);
   if (error) throw error;
   return path;

@@ -87,17 +87,29 @@ returns boolean language sql security definer stable set search_path = public as
   select exists (select 1 from public.profiles where id = auth.uid() and role = 'admin');
 $$;
 
+-- Am I an APPROVED member? The invite-gate must be enforced here, in the database,
+-- not only in middleware.ts — middleware guards page routing, but any client holding
+-- the public anon key can call PostgREST/RPC directly and skip it entirely.
+create or replace function public.is_active()
+returns boolean language sql security definer stable set search_path = public as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and status = 'active');
+$$;
+
 -- My email (from auth.users)
 create or replace function public.my_email()
 returns text language sql security definer stable set search_path = public, auth as $$
   select email from auth.users where id = auth.uid();
 $$;
 
--- Can the current user view an entry? (security definer avoids entries<->shares recursion)
+-- Can the current user view an entry ROW directly? (security definer avoids entries<->shares recursion)
+-- NOTE: deliberately does NOT include `p_visibility = 'public'`. RLS filters rows, not columns,
+-- so allowing public rows here handed every caller the full row INCLUDING user_id — which
+-- de-anonymised "anonymous" shares (and let them be correlated to a user's named shares).
+-- Public/community reads must go exclusively through list_shared_entries()/get_shared_entry(),
+-- which are security definer and never return user_id.
 create or replace function public.can_view_entry(p_entry uuid, p_visibility text, p_owner uuid)
 returns boolean language sql security definer stable set search_path = public as $$
   select p_owner = auth.uid()
-    or p_visibility = 'public'
     or (p_visibility = 'custom' and exists (
          select 1 from public.entry_shares s
          where s.entry_id = p_entry and lower(s.shared_with_email) = lower(public.my_email())));
@@ -219,6 +231,9 @@ alter table public.entries add column if not exists shared_media_url text;
 
 -- All publicly shared dreams, with author name (NULL when shared anonymously).
 -- security definer so it can read profiles.display_name without loosening profiles RLS.
+-- Gated by is_active(): the community feed is for approved members only. A merely
+-- authenticated (pending) account gets zero rows, so it cannot bypass the invite gate
+-- by calling this RPC directly.
 create or replace function public.list_shared_entries()
 returns table (
   id uuid, type text, title text, body text, lucidity text,
@@ -231,11 +246,15 @@ language sql security definer stable set search_path = public as $$
          case when e.shared_anonymous then null else p.display_name end
   from public.entries e
   left join public.profiles p on p.id = e.user_id
-  where e.visibility = 'public'
+  where e.visibility = 'public' and public.is_active()
   order by e.created_at desc;
 $$;
 
--- One publicly shared dream (for the /d/[id] public page). Anon-callable.
+-- One publicly shared dream (for the /d/[id] public page). Intentionally anon-callable:
+-- this IS the external share-link feature (send a link on WhatsApp, recipient opens it
+-- without an account). It returns a single entry only for an exact, unguessable uuid, and
+-- never returns user_id (and nulls the name when shared anonymously). Not a bypass of the
+-- invite gate: the community FEED (list_shared_entries) is members-only.
 create or replace function public.get_shared_entry(p_id uuid)
 returns table (
   id uuid, type text, title text, body text, lucidity text,
@@ -256,13 +275,15 @@ grant execute on function public.get_shared_entry(uuid) to anon, authenticated;
 
 -- Community header stats. security definer so it can count members/entries
 -- without exposing any private content or profile details.
+-- Gated by is_active(): approved members only (returns no row otherwise).
 create or replace function public.community_stats()
 returns table (members int, shared int, week int)
 language sql security definer stable set search_path = public as $$
   select
     (select count(*)::int from public.profiles where status = 'active'),
     (select count(*)::int from public.entries where visibility = 'public'),
-    (select count(*)::int from public.entries where visibility = 'public' and created_at > now() - interval '7 days');
+    (select count(*)::int from public.entries where visibility = 'public' and created_at > now() - interval '7 days')
+  where public.is_active();
 $$;
 grant execute on function public.community_stats() to authenticated;
 
@@ -270,11 +291,15 @@ grant execute on function public.community_stats() to authenticated;
 -- only its type (for color) and whether it belongs to the caller (for the glow).
 -- No title/body/author is ever exposed. mine-first so a client-side cap keeps
 -- the caller's own dots. The actual content stays private (RLS on entries).
+-- Gated by is_active(): approved members only. This is security definer and returns a row
+-- per entry (including private ones) as an anonymous dot, so without the gate it leaked the
+-- existence, count and type-distribution of every private dream to any logged-in account.
 create or replace function public.consciousness_dots()
 returns table (type text, mine boolean)
 language sql security definer stable set search_path = public as $$
   select e.type, (e.user_id = auth.uid()) as mine
   from public.entries e
+  where public.is_active()
   order by (e.user_id = auth.uid()) desc, e.created_at desc;
 $$;
 grant execute on function public.consciousness_dots() to authenticated;
