@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Reactions from "@/components/Reactions";
 import { useParams } from "next/navigation";
 import StarField from "@/components/StarField";
 import DiaryHex from "@/components/DiaryHex";
@@ -112,9 +113,13 @@ export default function SharedDreamPage() {
           </div>
         )}
 
-        {/* CTA */}
-        <Link href="/welcome" style={{ marginTop: 6, height: 52, borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 9, textDecoration: "none", background: `linear-gradient(135deg, ${p.fabFrom}, ${p.fabTo})`, boxShadow: `0 12px 30px ${p.fabFrom}66` }}>
-          <span style={{ fontSize: 15.5, fontWeight: 700, color: "#fff" }}>{t("sd.join")}</span>
+        {/* How the community answers this memory */}
+        <div style={{ marginTop: 2, padding: "14px 15px", borderRadius: 16, background: p.cardBg, border: `1px solid ${p.cardBorder}` }}>
+          <Reactions entryId={e.id} />
+        </div>
+
+        <Link href="/community" style={{ marginTop: 6, height: 52, borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 9, textDecoration: "none", background: `linear-gradient(135deg, ${p.fabFrom}, ${p.fabTo})`, boxShadow: `0 12px 30px ${p.fabFrom}66` }}>
+          <span style={{ fontSize: 15.5, fontWeight: 700, color: "#fff" }}>{t("rx.backToWeave")}</span>
         </Link>
         <div style={{ textAlign: "center", fontSize: 12, color: p.subtext }}>{t("sd.brand")}</div>
       </div>

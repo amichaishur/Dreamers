@@ -6,7 +6,7 @@ import EntryForm from "@/components/EntryForm";
 import { theme } from "@/lib/theme";
 import { DiaryKey } from "@/lib/diary";
 import { useLang } from "@/lib/i18n";
-import { getEntry, updateEntry, uploadAttachment, setEntrySharing, DbEntry } from "@/lib/supabase/data";
+import { getEntry, updateEntry, deleteEntry, uploadAttachment, setEntrySharing, DbEntry } from "@/lib/supabase/data";
 
 const p = theme;
 
@@ -36,9 +36,15 @@ export default function EditEntryPage() {
       diaryKey={entry.type as DiaryKey}
       headerKey="ef.editIn"
       submitKey="ef.save"
-      initial={{ title: entry.title, body: entry.body, lucidity: entry.lucidity, shared: entry.visibility === "public", anonymous: entry.shared_anonymous, createdAt: entry.created_at }}
+      initial={{ title: entry.title, body: entry.body, lucidity: entry.lucidity, awareness: entry.awareness, kind: entry.kind, meta: entry.meta, shared: entry.visibility === "public", anonymous: entry.shared_anonymous, createdAt: entry.created_at }}
       existingMediaName={existingMediaName}
-      onBack={() => router.push(`/entry/${entry.id}`)}
+      onBack={() => router.push("/journals")}
+      onDelete={async () => {
+        if (!confirm(t("se.deleteConfirm"))) return;
+        await deleteEntry(entry.id);
+        router.push("/journals");
+        router.refresh();
+      }}
       onSubmit={async (v) => {
         let media_url: string | null | undefined;
         if (v.file) media_url = await uploadAttachment(v.file);
@@ -49,12 +55,15 @@ export default function EditEntryPage() {
           title: v.title,
           body: v.body,
           lucidity: entry.type === "dream" ? v.lucidity : null,
+          awareness: entry.type === "dream" ? v.awareness : null,
+          kind: v.kind,
+          meta: v.meta,
           created_at: v.createdAt,
           ...(media_url !== undefined ? { media_url } : {}),
         });
         // Reconcile sharing (also refreshes the shared image URL if the file changed).
         await setEntrySharing(entry.id, { shared: v.shared, anonymous: v.anonymous });
-        router.push(`/entry/${entry.id}`);
+        router.push("/journals");
         router.refresh();
       }}
     />

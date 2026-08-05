@@ -8,11 +8,14 @@ import BottomNav from "@/components/BottomNav";
 import { theme, DiaryType } from "@/lib/theme";
 import { diaryStyle } from "@/lib/diary";
 import { useLang } from "@/lib/i18n";
-import { listSharedEntries, getCommunityStats, SharedEntry, CommunityStats } from "@/lib/supabase/data";
+import { listSharedEntries, getCommunityStats, listReactionCounts, SharedEntry, CommunityStats, ReactionCounts } from "@/lib/supabase/data";
+import { ReactionIcon, REACTION_COLOR } from "@/components/Reactions";
 
 const p = theme;
 const TYPES: DiaryType[] = ["reality", "idea", "dream", "creation", "record"];
 type Filter = DiaryType | "all";
+/** Which kind of answer a memory has to carry to show up. */
+type Lens = "all" | "comment" | "reflection" | "sync";
 
 export default function CommunityPage() {
   const { t, lang } = useLang();
@@ -21,11 +24,14 @@ export default function CommunityPage() {
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<SharedEntry[] | null>(null);
   const [stats, setStats] = useState<CommunityStats | null>(null);
+  const [counts, setCounts] = useState<Map<string, ReactionCounts>>(new Map());
+  const [lens, setLens] = useState<Lens>("all");
 
   useEffect(() => {
     let alive = true;
     listSharedEntries().then((r) => { if (alive) setRows(r); }).catch(() => { if (alive) setRows([]); });
     getCommunityStats().then((s) => { if (alive) setStats(s); }).catch(() => {});
+    listReactionCounts().then((c) => { if (alive) setCounts(c); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -36,13 +42,18 @@ export default function CommunityPage() {
     const q = query.trim().toLowerCase();
     return all.filter((e) => {
       if (filter !== "all" && e.type !== filter) return false;
+      if (lens !== "all") {
+        const c = counts.get(e.id);
+        const n = lens === "comment" ? c?.comments : lens === "reflection" ? c?.reflections : c?.syncs;
+        if (!n) return false;
+      }
       if (q) {
         const who = e.shared_anonymous ? "" : e.author_name ?? "";
         if (!(`${e.title} ${e.body} ${who}`.toLowerCase().includes(q))) return false;
       }
       return true;
     });
-  }, [rows, filter, query]);
+  }, [rows, filter, query, lens, counts]);
 
   const activeColor = filter === "all" ? p.fabTo : p.dots[filter];
   const activeLabel = filter === "all" ? t("cm.allDreams") : t(`diary.${filter}`);
@@ -125,6 +136,24 @@ export default function CommunityPage() {
           )}
         </div>
 
+        {/* Which kind of answer to look through */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 14, overflowX: "auto", paddingBottom: 2 }}>
+          {([["all", t("cm.filterAll")], ["comment", t("cm.filterComments")], ["reflection", t("cm.filterReflections")], ["sync", t("cm.filterSyncs")]] as const).map(([k, label]) => {
+            const on = lens === k;
+            const c = k === "all" ? p.fabTo : REACTION_COLOR[k];
+            return (
+              <button
+                key={k}
+                onClick={() => setLens(k)}
+                style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 6, padding: "7px 13px", borderRadius: 999, border: `1px solid ${on ? `${c}66` : p.cardBorder}`, background: on ? `${c}22` : p.cardBg, color: on ? c : p.subtext, font: "inherit", fontSize: 12.5, fontWeight: on ? 700 : 600, cursor: "pointer", whiteSpace: "nowrap" }}
+              >
+                {k !== "all" && <ReactionIcon kind={k} size={12} color={on ? c : p.subtext} />}
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
         {/* List — same look as journals, community entries only */}
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {filtered.map((e) => {
@@ -138,6 +167,22 @@ export default function CommunityPage() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.title}</div>
                   <div style={{ fontSize: 12, color: s.nameColor, marginTop: 2 }}>{t(`diary.${e.type}`)}{who ? ` · ${who}` : ""}</div>
+                  {/* What the community already said back */}
+                  {(() => {
+                    const c = counts.get(e.id);
+                    if (!c) return null;
+                    const shown = ([["love", c.loves], ["comment", c.comments], ["reflection", c.reflections], ["sync", c.syncs]] as const).filter(([, n]) => n > 0);
+                    if (!shown.length) return null;
+                    return (
+                      <div style={{ display: "flex", gap: 9, marginTop: 5 }}>
+                        {shown.map(([k, n]) => (
+                          <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, color: REACTION_COLOR[k], fontVariantNumeric: "tabular-nums" }}>
+                            <ReactionIcon kind={k} size={11} />{n}
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div style={{ fontSize: 12, color: p.subtext, fontVariantNumeric: "tabular-nums" }}>{date}</div>
               </Link>

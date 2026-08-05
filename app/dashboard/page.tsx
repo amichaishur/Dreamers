@@ -5,8 +5,10 @@ import StarField from "@/components/StarField";
 import BottomNav from "@/components/BottomNav";
 import { useLang } from "@/lib/i18n";
 import { DIARIES } from "@/lib/diary";
-import { listStatsEntries, DbEntry } from "@/lib/supabase/data";
+import Link from "next/link";
+import { listStatsEntries, listInbox, markInboxRead, DbEntry, InboxItem, ReactionKind } from "@/lib/supabase/data";
 import { computeStats, LucidityPoint } from "@/lib/stats";
+import { ReactionIcon, REACTION_COLOR } from "@/components/Reactions";
 
 const BG = "linear-gradient(168deg,#0C0C1E 0%,#160F30 52%,#241A44 100%)";
 const card: React.CSSProperties = { borderRadius: 22, background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.09)", marginBottom: 9 };
@@ -15,8 +17,8 @@ const DIARY_COLOR: Record<string, string> = Object.fromEntries(DIARIES.map((d) =
 type LucRange = "month" | "year" | "5y";
 const RANGE_DAYS: Record<LucRange, number> = { month: 30, year: 365, "5y": 1825 };
 
-/** Stock-style lucidity graph: purple line + dots over time, 0-10 scale. */
-function LucidityChart({ points, lang, t }: { points: LucidityPoint[]; lang: string; t: (k: string) => string }) {
+/** Stock-style meter: a line over time on a 0-10 scale, with range tabs. */
+function LucidityChart({ points, lang, t, titleKey = "db.lucMeter", subKey = "db.lucSub", lineColor = "#B79CEB" }: { points: LucidityPoint[]; lang: string; t: (k: string) => string; titleKey?: string; subKey?: string; lineColor?: string }) {
   const [range, setRange] = useState<LucRange>("month");
   const now = Date.now();
   const winStart = now - RANGE_DAYS[range] * 86400000;
@@ -28,7 +30,8 @@ function LucidityChart({ points, lang, t }: { points: LucidityPoint[]; lang: str
   const changePct = prev.length && prevAvg > 0 ? Math.round(((avg - prevAvg) / prevAvg) * 100) : null;
   const latest = win.length ? win[win.length - 1].v : null;
   // Brand purple line (stock-style shape, our colours).
-  const lineC = "#B79CEB";
+  const lineC = lineColor;
+  const areaId = `meterArea-${titleKey.replace(/[^a-zA-Z]/g, "")}`;
 
   // Chart geometry (viewBox space)
   const W = 340, H = 150, padL = 22, padR = 34, padT = 12, padB = 22;
@@ -53,9 +56,9 @@ function LucidityChart({ points, lang, t }: { points: LucidityPoint[]; lang: str
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B79CEB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><polyline points="2 12 6 12 9 5 14 19 17 12 22 12" /></svg>
-            <span style={{ fontSize: 15, fontWeight: 700 }}>{t("db.lucMeter")}</span>
+            <span style={{ fontSize: 15, fontWeight: 700 }}>{t(titleKey)}</span>
           </div>
-          <div style={{ fontSize: 11, color: "rgba(236,231,250,0.5)", marginTop: 2 }}>{t("db.lucSub")}</div>
+          <div style={{ fontSize: 11, color: "rgba(236,231,250,0.5)", marginTop: 2 }}>{t(subKey)}</div>
         </div>
         <div style={{ display: "flex", gap: 2, padding: 3, borderRadius: 11, background: "rgba(0,0,0,0.25)", flex: "0 0 auto" }}>
           <button style={tab(range === "month")} onClick={() => setRange("month")}>{t("db.rMonth")}</button>
@@ -71,7 +74,7 @@ function LucidityChart({ points, lang, t }: { points: LucidityPoint[]; lang: str
           <div dir="ltr" style={{ width: "100%" }}>
             <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
               <defs>
-                <linearGradient id="lucArea" x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id={areaId} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0" stopColor={lineC} stopOpacity="0.28" />
                   <stop offset="1" stopColor={lineC} stopOpacity="0" />
                 </linearGradient>
@@ -83,7 +86,7 @@ function LucidityChart({ points, lang, t }: { points: LucidityPoint[]; lang: str
                 </g>
               ))}
               {latest !== null && <line x1={padL} x2={W - padR} y1={py(latest)} y2={py(latest)} stroke={lineC} strokeWidth="0.7" strokeDasharray="2 3" opacity="0.5" />}
-              {win.length > 1 && <polygon points={areaPts} fill="url(#lucArea)" />}
+              {win.length > 1 && <polygon points={areaPts} fill={`url(#${areaId})`} />}
               {win.length > 1 && <polyline points={linePts} fill="none" stroke={lineC} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 4px ${lineC}99)` }} />}
               {win.length <= 45 && win.map((pt, i) => (
                 <circle key={i} cx={px(pt.t)} cy={py(pt.v)} r={win.length > 25 ? 1.8 : 2.6} fill={lineC} stroke="#160F30" strokeWidth="1" />
@@ -119,13 +122,86 @@ function LucidityChart({ points, lang, t }: { points: LucidityPoint[]; lang: str
   );
 }
 
+/**
+ * What the community said back to you. Collapsed it reads as counts per kind;
+ * opening it shows the responses and marks them all as seen.
+ */
+function Mailbox({ items, onOpen, t, lang }: { items: InboxItem[]; onOpen: () => void; t: (k: string) => string; lang: string }) {
+  const [open, setOpen] = useState(false);
+  const unread = items.filter((i) => i.unread).length;
+  const kinds: ReactionKind[] = ["sync", "reflection", "comment", "love"];
+  const tally = (k: ReactionKind) => items.filter((i) => i.kind === k).length;
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && unread) onOpen();
+  };
+
+  return (
+    <div style={{ ...card, padding: "14px 16px" }}>
+      <button onClick={toggle} style={{ width: "100%", display: "flex", alignItems: "center", gap: 11, background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "inherit", font: "inherit", textAlign: "start" }}>
+        <div style={{ position: "relative", width: 34, height: 34, borderRadius: 11, background: "rgba(154,124,235,0.16)", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#C9B6F2" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>
+          {unread > 0 && (
+            <span style={{ position: "absolute", top: -4, insetInlineEnd: -4, minWidth: 17, height: 17, padding: "0 4px", borderRadius: 999, background: "#F08BA8", color: "#2A0E18", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", fontVariantNumeric: "tabular-nums" }}>{unread}</span>
+          )}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>{t("db.inbox")}</div>
+          <div style={{ fontSize: 11.5, color: "rgba(236,231,250,0.55)", marginTop: 1 }}>
+            {unread > 0 ? `${t("db.inboxNew")} ${unread}` : t("db.inboxCaughtUp")}
+          </div>
+        </div>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(236,231,250,0.5)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto", transform: open ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}><polyline points="9 6 15 12 9 18" /></svg>
+      </button>
+
+      {!open && items.length > 0 && (
+        <div style={{ display: "flex", gap: 14, marginTop: 11, paddingTop: 11, borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+          {kinds.map((k) => (
+            <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: REACTION_COLOR[k], fontVariantNumeric: "tabular-nums" }}>
+              <ReactionIcon kind={k} size={13} />
+              {tally(k)}
+              <span style={{ color: "rgba(236,231,250,0.45)", fontWeight: 400 }}>{t(`rx.${k}`)}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {open && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+          {items.length === 0 && <div style={{ fontSize: 12.5, color: "rgba(236,231,250,0.5)" }}>{t("db.inboxEmpty")}</div>}
+          {items.slice(0, 20).map((i) => (
+            <Link key={i.id} href={`/d/${i.entry_id}`} style={{ display: "flex", gap: 10, alignItems: "flex-start", textDecoration: "none", color: "inherit" }}>
+              <div style={{ width: 26, height: 26, borderRadius: 9, flex: "0 0 auto", background: `${REACTION_COLOR[i.kind]}22`, border: `1px solid ${REACTION_COLOR[i.kind]}44`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <ReactionIcon kind={i.kind} size={13} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5 }}>
+                  <span style={{ fontWeight: 700 }}>{i.author_name ?? t("rx.someone")}</span>
+                  <span style={{ color: "rgba(236,231,250,0.6)" }}> · {t(`rx.${i.kind}`)} · </span>
+                  <span style={{ color: "#C9B6F2" }}>{i.entry_title}</span>
+                </div>
+                {i.body && <div style={{ fontSize: 12.5, color: "rgba(236,231,250,0.78)", marginTop: 2, lineHeight: 1.45 }}>{i.body}</div>}
+              </div>
+              {i.unread && <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#F08BA8", flex: "0 0 auto", marginTop: 8 }} />}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { t, lang } = useLang();
   const [entries, setEntries] = useState<DbEntry[]>([]);
+  const [inbox, setInbox] = useState<InboxItem[]>([]);
 
   useEffect(() => {
     let alive = true;
     listStatsEntries().then((rows) => { if (alive) setEntries(rows); }).catch(() => {});
+    listInbox().then((rows) => { if (alive) setInbox(rows); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -196,6 +272,16 @@ export default function DashboardPage() {
           ))}
         </div>
 
+        <Mailbox
+          items={inbox}
+          onOpen={() => {
+            markInboxRead().catch(() => {});
+            setInbox((prev) => prev.map((i) => ({ ...i, unread: false })));
+          }}
+          t={t}
+          lang={lang}
+        />
+
         <div style={{ ...card, padding: "15px 18px 16px" }}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 13 }}>{t("db.byJournal")}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
@@ -251,6 +337,16 @@ export default function DashboardPage() {
         </div>
 
         <LucidityChart points={stats.lucidityPoints} lang={lang} t={t} />
+
+        {/* Awareness: how present you were inside the dream, lucid or not */}
+        <LucidityChart
+          points={stats.awarenessPoints}
+          lang={lang}
+          t={t}
+          titleKey="db.awarenessMeter"
+          subKey="db.awarenessSub"
+          lineColor="#7FB2F0"
+        />
 
         {/* Lucidity distribution */}
         <div style={{ ...card, padding: "15px 18px 14px" }}>

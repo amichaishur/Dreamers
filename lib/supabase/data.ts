@@ -7,12 +7,28 @@ import { DiaryType } from "@/lib/theme";
 export type Lucidity = string;
 export type Visibility = "private" | "public" | "custom";
 
+/** Per-journal sub-type chosen with the buttons at the top of a form. */
+export type EntryKind =
+  | "sync" | "reality_check" | "anomaly"      // reality journal
+  | "creation_seed" | "dream_seed"            // creation journal
+  | null;
+
+/** Per-journal extras that don't deserve their own column. */
+export type EntryMeta = {
+  symbolType?: string;      // symbols journal: what the symbol was
+  symbolWhere?: string;     // where it showed up
+  symbolRecurred?: boolean; // has it come back before
+};
+
 export type DbEntry = {
   id: string;
   type: DiaryType;
   title: string;
   body: string;
   lucidity: Lucidity | null;
+  awareness: Lucidity | null;
+  kind: EntryKind;
+  meta: EntryMeta;
   media_url: string | null;
   visibility: Visibility;
   shared_anonymous: boolean;
@@ -124,6 +140,9 @@ export async function createEntry(input: {
   title: string;
   body: string;
   lucidity?: Lucidity | null;
+  awareness?: Lucidity | null;
+  kind?: EntryKind;
+  meta?: EntryMeta;
   visibility: Visibility;
   file?: File | null;
   created_at?: string;
@@ -143,6 +162,9 @@ export async function createEntry(input: {
       title: input.title,
       body: input.body,
       lucidity: input.lucidity ?? null,
+      awareness: input.awareness ?? null,
+      kind: input.kind ?? null,
+      meta: input.meta ?? {},
       visibility: input.visibility,
       media_url,
       ...(input.created_at ? { created_at: input.created_at } : {}),
@@ -160,6 +182,9 @@ export async function updateEntry(
     title?: string;
     body?: string;
     lucidity?: Lucidity | null;
+    awareness?: Lucidity | null;
+    kind?: EntryKind;
+    meta?: EntryMeta;
     visibility?: Visibility;
     media_url?: string | null;
     created_at?: string;
@@ -227,6 +252,77 @@ export async function getSharedEntry(id: string): Promise<SharedEntry | null> {
   return rows[0] ?? null;
 }
 
+// ---------- Community reactions ----------
+
+export type ReactionKind = "love" | "comment" | "reflection" | "sync";
+export type Reaction = {
+  id: string;
+  kind: ReactionKind;
+  body: string;
+  created_at: string;
+  author_name: string | null;
+  mine: boolean;
+};
+export type ReactionCounts = {
+  entry_id: string;
+  loves: number;
+  comments: number;
+  reflections: number;
+  syncs: number;
+  i_loved: boolean;
+};
+export type InboxItem = {
+  id: string;
+  entry_id: string;
+  entry_title: string;
+  entry_type: DiaryType;
+  kind: ReactionKind;
+  body: string;
+  created_at: string;
+  author_name: string | null;
+  unread: boolean;
+};
+
+export async function listReactions(entryId: string): Promise<Reaction[]> {
+  if (demoEnabled()) return demoReactions(entryId);
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("list_reactions", { p_entry: entryId });
+  if (error) return [];
+  return (data ?? []) as Reaction[];
+}
+
+/** Respond to a shared memory. Sending 'love' twice takes it back. */
+export async function react(entryId: string, kind: ReactionKind, body = ""): Promise<void> {
+  if (demoEnabled()) return;
+  const supabase = createClient();
+  const { error } = await supabase.rpc("react", { p_entry: entryId, p_kind: kind, p_body: body });
+  if (error) throw error;
+}
+
+export async function listReactionCounts(): Promise<Map<string, ReactionCounts>> {
+  if (demoEnabled()) return demoCounts();
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("reaction_counts");
+  const m = new Map<string, ReactionCounts>();
+  if (error) return m;
+  ((data ?? []) as ReactionCounts[]).forEach((r) => m.set(r.entry_id, r));
+  return m;
+}
+
+export async function listInbox(): Promise<InboxItem[]> {
+  if (demoEnabled()) return demoInbox();
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("my_inbox");
+  if (error) return [];
+  return (data ?? []) as InboxItem[];
+}
+
+export async function markInboxRead(): Promise<void> {
+  if (demoEnabled()) return;
+  const supabase = createClient();
+  await supabase.rpc("mark_inbox_read");
+}
+
 export type MindDot = { type: DiaryType; mine: boolean };
 
 // Preview-only demo mode. Enabled with ?demo (persisted), disabled with ?nodemo.
@@ -272,12 +368,63 @@ function demoPersonalEntries(): DbEntry[] {
     title: DEMO_TITLES[i % DEMO_TITLES.length],
     body: "רשומה לדוגמה במצב תצוגה.",
     lucidity: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(5 + 3 * Math.sin(i * 1.1))))) : null,
+    awareness: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(5 + 3 * Math.sin(i * 0.8 + 1))))) : null,
+    kind: type === "reality" ? (["sync", "reality_check", "anomaly"] as const)[i % 3] : null,
+    meta: {},
     media_url: null,
     visibility: i % 5 === 0 ? "public" : "private",
     shared_anonymous: false,
     shared_media_url: null,
     created_at: demoDateISO(i * 2 + (i % 3)),
   }));
+}
+
+function demoReactions(entryId: string): Reaction[] {
+  const kinds: ReactionKind[] = ["love", "comment", "reflection", "sync"];
+  const n = (entryId.charCodeAt(entryId.length - 1) % 3) + 1;
+  const bodies = ["גם אני חלמתי משהו דומה בדיוק באותו שבוע.", "זה נגע בי. תודה ששיתפת.", "הסמל הזה חוזר גם אצלי."];
+  return Array.from({ length: n }, (_, i) => ({
+    id: `demo-r-${entryId}-${i}`,
+    kind: kinds[(i + entryId.length) % kinds.length],
+    body: i === 0 ? "" : bodies[i % bodies.length],
+    created_at: demoDateISO(i),
+    author_name: DEMO_AUTHORS[i % DEMO_AUTHORS.length] ?? "מיכל",
+    mine: false,
+  }));
+}
+
+function demoCounts(): Map<string, ReactionCounts> {
+  const m = new Map<string, ReactionCounts>();
+  demoSharedList().forEach((e, i) => {
+    m.set(e.id, {
+      entry_id: e.id,
+      loves: (i * 3) % 5,
+      comments: i % 3,
+      reflections: (i + 1) % 3,
+      syncs: i % 2,
+      i_loved: i % 4 === 0,
+    });
+  });
+  return m;
+}
+
+function demoInbox(): InboxItem[] {
+  const mine = demoPersonalEntries().filter((e) => e.visibility === "public");
+  const kinds: ReactionKind[] = ["sync", "reflection", "comment", "love"];
+  const bodies = ["גם אני חלמתי משהו דומה.", "זה נגע בי מאוד.", "הסמל הזה חוזר גם אצלי.", ""];
+  return mine.flatMap((e, i) =>
+    kinds.slice(0, (i % 3) + 2).map((kind, k) => ({
+      id: `demo-i-${i}-${k}`,
+      entry_id: e.id,
+      entry_title: e.title,
+      entry_type: e.type,
+      kind,
+      body: kind === "love" ? "" : bodies[k % bodies.length],
+      created_at: demoDateISO(i + k),
+      author_name: DEMO_AUTHORS[(i + k) % DEMO_AUTHORS.length] ?? "יונתן",
+      unread: i + k < 4,
+    }))
+  );
 }
 
 function demoSharedList(): SharedEntry[] {
@@ -335,9 +482,13 @@ function demoStatsEntries(): DbEntry[] {
     const type: DiaryType = isDream ? "dream" : others[i % others.length];
     const raw = 5 + 3 * Math.sin(i * 0.17) + 1.8 * Math.sin(i * 0.045) + ((i % 9) - 4) * 0.35;
     const v = Math.max(0, Math.min(10, Math.round(raw)));
+    // Awareness tracks lucidity loosely: often present even when a dream is not lucid.
+    const aw = Math.max(0, Math.min(10, Math.round(raw * 0.75 + 1.6 + Math.sin(i * 0.31))));
     out.push({
       id: `demo-${i}`, type, title: "חלום לדוגמה", body: "",
-      lucidity: isDream ? String(v) : null, media_url: null,
+      lucidity: isDream ? String(v) : null,
+      awareness: isDream ? String(aw) : null,
+      kind: null, meta: {}, media_url: null,
       visibility: "private", shared_anonymous: false, shared_media_url: null,
       created_at: new Date(t).toISOString(),
     });

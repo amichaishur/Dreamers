@@ -6,7 +6,7 @@ import DiaryHex from "@/components/DiaryHex";
 import { theme } from "@/lib/theme";
 import { DIARY_MAP, diaryStyle, DiaryKey } from "@/lib/diary";
 import { useLang } from "@/lib/i18n";
-import { Lucidity } from "@/lib/supabase/data";
+import { Lucidity, EntryKind, EntryMeta } from "@/lib/supabase/data";
 
 const p = theme;
 
@@ -14,11 +14,23 @@ export type EntryFormValues = {
   title: string;
   body: string;
   lucidity: Lucidity;
+  awareness: Lucidity;
+  kind: EntryKind;
+  meta: EntryMeta;
   file: File | null;
   removeExisting: boolean;
   shared: boolean;
   anonymous: boolean;
   createdAt: string; // ISO, editable (defaults to now)
+};
+
+/**
+ * Journals that open with a question. Picking an answer sets the entry's kind
+ * and swaps the prompt under "detail" for questions that fit that answer.
+ */
+const KINDS: Partial<Record<DiaryKey, Exclude<EntryKind, null>[]>> = {
+  reality: ["sync", "reality_check", "anomaly"],
+  creation: ["creation_seed", "dream_seed"],
 };
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
@@ -33,14 +45,16 @@ export default function EntryForm({
   submitKey,
   onBack,
   onSubmit,
+  onDelete,
 }: {
   diaryKey: DiaryKey;
-  initial?: { title?: string; body?: string; lucidity?: Lucidity | null; shared?: boolean; anonymous?: boolean; createdAt?: string };
+  initial?: { title?: string; body?: string; lucidity?: Lucidity | null; awareness?: Lucidity | null; kind?: EntryKind; meta?: EntryMeta; shared?: boolean; anonymous?: boolean; createdAt?: string };
   existingMediaName?: string | null;
   headerKey: string; // e.g. "ef.newIn" or "ef.editIn"
   submitKey: string; // e.g. "ef.add" or "ef.save"
   onBack: () => void;
   onSubmit: (values: EntryFormValues) => Promise<void>;
+  onDelete?: () => void;
 }) {
   const { t } = useLang();
   const d = DIARY_MAP[diaryKey];
@@ -50,6 +64,13 @@ export default function EntryForm({
   const [title, setTitle] = useState(initial?.title ?? "");
   const [body, setBody] = useState(initial?.body ?? "");
   const [lucidity, setLucidity] = useState<Lucidity>(initial?.lucidity ?? "5");
+  const [awareness, setAwareness] = useState<Lucidity>(initial?.awareness ?? "5");
+  const kindChoices = KINDS[diaryKey];
+  const [kind, setKind] = useState<EntryKind>(initial?.kind ?? kindChoices?.[0] ?? null);
+  const isSymbols = diaryKey === "record";
+  const [symbolType, setSymbolType] = useState(initial?.meta?.symbolType ?? "");
+  const [symbolWhere, setSymbolWhere] = useState(initial?.meta?.symbolWhere ?? "");
+  const [symbolRecurred, setSymbolRecurred] = useState(initial?.meta?.symbolRecurred ?? false);
   const [file, setFile] = useState<File | null>(null);
   const [removeExisting, setRemoveExisting] = useState(false);
   const [shared, setShared] = useState(initial?.shared ?? false);
@@ -77,8 +98,11 @@ export default function EntryForm({
     setSaving(true);
     setError("");
     const createdAt = new Date(`${dateStr}T${timeStr || "00:00"}`).toISOString();
+    const meta: EntryMeta = isSymbols
+      ? { symbolType: symbolType.trim(), symbolWhere: symbolWhere.trim(), symbolRecurred }
+      : {};
     try {
-      await onSubmit({ title: title.trim(), body: body.trim(), lucidity, file, removeExisting, shared, anonymous, createdAt });
+      await onSubmit({ title: title.trim(), body: body.trim(), lucidity, awareness, kind, meta, file, removeExisting, shared, anonymous, createdAt });
     } catch {
       setError(t("ef.error"));
       setSaving(false);
@@ -100,17 +124,71 @@ export default function EntryForm({
             <div style={{ fontSize: 12, color: p.subtext }}>{t(headerKey)}</div>
             <div style={{ fontSize: 20, fontWeight: 700, color: s.nameColor, lineHeight: 1.1, marginTop: 1 }}>{t(`diary.${diaryKey}`)}</div>
           </div>
+          {onDelete && (
+            <button onClick={onDelete} aria-label={t("se.delete")} style={{ width: 38, height: 38, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(232,124,124,0.1)", border: "1px solid rgba(232,124,124,0.26)", flex: "0 0 auto", cursor: "pointer" }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F0A4A4" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16" /><path d="M9 7V5h6v2" /><path d="M6 7l1 13h10l1-13" /></svg>
+            </button>
+          )}
         </div>
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 10, marginTop: 12, minHeight: 0 }}>
+          {/* What kind of entry this is — sets the questions that follow */}
+          {kindChoices && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              <div style={label}>{t("ef.kindQ")}</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {kindChoices.map((k) => {
+                  const on = kind === k;
+                  return (
+                    <button
+                      key={k}
+                      onClick={() => setKind(k)}
+                      style={{ flex: 1, minWidth: 0, textAlign: "start", padding: "10px 11px", borderRadius: 14, background: on ? s.chipBg : p.cardBg, border: `1px solid ${on ? s.bordStrong : p.cardBorder}`, cursor: "pointer", color: "inherit", font: "inherit" }}
+                    >
+                      <div style={{ fontSize: 13, fontWeight: 700, color: on ? s.nameColor : p.text }}>{t(`kind.${k}`)}</div>
+                      <div style={{ fontSize: 10.5, color: p.subtext, marginTop: 3, lineHeight: 1.35 }}>{t(`kind.${k}.sub`)}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={label}>{t("ef.name")}</div>
             <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("ef.namePh")} style={field} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={label}>{t("ef.detail")}</div>
+            {/* The chosen kind brings its own guiding questions */}
+            {kind && t(`kind.${kind}.ask`) !== `kind.${kind}.ask` && (
+              <div style={{ fontSize: 11.5, color: s.nameColor, lineHeight: 1.5 }}>{t(`kind.${kind}.ask`)}</div>
+            )}
             <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder={t("ef.detailPh")} style={{ ...field, height: 70, fontSize: 14, lineHeight: 1.5, resize: "none" }} />
           </div>
+
+          {/* Symbols and anchors: what returned, and from where */}
+          {isSymbols && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              <div style={{ display: "flex", gap: 9 }}>
+                <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={label}>{t("ef.symbolType")}</div>
+                  <input value={symbolType} onChange={(e) => setSymbolType(e.target.value)} placeholder={t("ef.symbolTypePh")} style={field} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={label}>{t("ef.symbolWhere")}</div>
+                  <input value={symbolWhere} onChange={(e) => setSymbolWhere(e.target.value)} placeholder={t("ef.symbolWherePh")} style={field} />
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <div style={{ ...label, flex: 1 }}>{t("ef.symbolRecurred")}</div>
+                <div style={{ display: "flex", gap: 7, flex: "0 0 auto" }}>
+                  <button onClick={() => setSymbolRecurred(true)} style={{ ...chip(symbolRecurred), flex: "0 0 auto", padding: "8px 18px" }}>{t("ef.yes")}</button>
+                  <button onClick={() => setSymbolRecurred(false)} style={{ ...chip(!symbolRecurred), flex: "0 0 auto", padding: "8px 18px" }}>{t("ef.no")}</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {isDream && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -124,6 +202,23 @@ export default function EntryForm({
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: p.subtext }}>
                 <span>{t("luc.scale0")}</span>
                 <span>{t("luc.scale10")}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Awareness: separate from lucidity, since you can be aware without being lucid */}
+          {isDream && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={label}>{t("ef.awareness")}</div>
+                <span style={{ flex: 1 }} />
+                <span style={{ fontSize: 22, fontWeight: 800, color: s.nameColor, fontVariantNumeric: "tabular-nums" }}>{Number(awareness) || 0}<span style={{ fontSize: 12.5, fontWeight: 500, color: p.subtext }}> / 10</span></span>
+              </div>
+              <div style={{ fontSize: 11, color: p.subtext, marginTop: -3, lineHeight: 1.4 }}>{t("ef.awarenessSub")}</div>
+              <input type="range" min={0} max={10} step={1} value={Number(awareness) || 0} onChange={(e) => setAwareness(e.target.value)} dir="rtl" style={{ width: "100%", accentColor: d.color, height: 6 }} />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: p.subtext }}>
+                <span>{t("aw.scale0")}</span>
+                <span>{t("aw.scale10")}</span>
               </div>
             </div>
           )}

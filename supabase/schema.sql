@@ -53,11 +53,17 @@ create table if not exists public.entries (
   title      text not null,
   body       text not null default '',
   lucidity   text check (lucidity is null or lucidity ~ '^([0-9]|10)$'),  -- 0-10 scale
+  awareness  text check (awareness is null or awareness ~ '^([0-9]|10)$'), -- 0-10, how aware you were inside the dream
+  kind       text,   -- per-journal sub-type: reality sync/check/anomaly, creation seed, ...
+  meta       jsonb not null default '{}'::jsonb, -- per-journal extras (symbol type, where it appeared, ...)
   media_url  text,
   visibility text not null default 'private' check (visibility in ('private','public','custom')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table public.entries add column if not exists awareness text;
+alter table public.entries add column if not exists kind text;
+alter table public.entries add column if not exists meta jsonb not null default '{}'::jsonb;
 
 create table if not exists public.entry_versions (
   id         uuid primary key default gen_random_uuid(),
@@ -71,6 +77,25 @@ create table if not exists public.entry_shares (
   entry_id          uuid not null references public.entries(id) on delete cascade,
   shared_with_email text not null
 );
+
+-- How the community answers a shared memory. One row per response.
+-- love   = a heart, no text
+-- comment    = a reply in words
+-- reflection = "this mirrors something in me"
+-- sync       = "this happened to me too"
+create table if not exists public.entry_reactions (
+  id         uuid primary key default gen_random_uuid(),
+  entry_id   uuid not null references public.entries(id) on delete cascade,
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  kind       text not null check (kind in ('love','comment','reflection','sync')),
+  body       text not null default '',
+  read_at    timestamptz,          -- set when the memory's owner has seen it
+  created_at timestamptz not null default now()
+);
+-- One love per person per memory; words can be added more than once.
+create unique index if not exists entry_reactions_one_love
+  on public.entry_reactions (entry_id, user_id) where kind = 'love';
+create index if not exists entry_reactions_by_entry on public.entry_reactions (entry_id, created_at desc);
 
 create table if not exists public.connections (
   id         uuid primary key default gen_random_uuid(),
@@ -206,6 +231,14 @@ create policy shares_all on public.entry_shares for all
 create policy connections_all on public.connections for all
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 
+-- Reactions: readable/writable through the RPCs below, which check membership.
+-- Direct table access stays owner-scoped so nobody can mine the table.
+alter table public.entry_reactions enable row level security;
+create policy reactions_own on public.entry_reactions for select using (user_id = auth.uid());
+create policy reactions_insert on public.entry_reactions for insert
+  with check (user_id = auth.uid() and public.is_active());
+create policy reactions_delete on public.entry_reactions for delete using (user_id = auth.uid());
+
 -- invitations & codes: admin-only manage. (Access checks happen server-side via functions.)
 create policy invitations_admin on public.invitations for all using (public.is_admin()) with check (public.is_admin());
 create policy codes_admin on public.invite_codes for all using (public.is_admin()) with check (public.is_admin());
@@ -238,12 +271,13 @@ create or replace function public.list_shared_entries()
 returns table (
   id uuid, type text, title text, body text, lucidity text,
   shared_media_url text, created_at timestamptz, shared_anonymous boolean,
-  author_name text
+  author_name text, kind text
 )
 language sql security definer stable set search_path = public as $$
   select e.id, e.type, e.title, e.body, e.lucidity,
          e.shared_media_url, e.created_at, e.shared_anonymous,
-         case when e.shared_anonymous then null else p.display_name end
+         case when e.shared_anonymous then null else p.display_name end,
+         e.kind
   from public.entries e
   left join public.profiles p on p.id = e.user_id
   where e.visibility = 'public' and public.is_active()
@@ -259,12 +293,13 @@ create or replace function public.get_shared_entry(p_id uuid)
 returns table (
   id uuid, type text, title text, body text, lucidity text,
   shared_media_url text, created_at timestamptz, shared_anonymous boolean,
-  author_name text
+  author_name text, kind text
 )
 language sql security definer stable set search_path = public as $$
   select e.id, e.type, e.title, e.body, e.lucidity,
          e.shared_media_url, e.created_at, e.shared_anonymous,
-         case when e.shared_anonymous then null else p.display_name end
+         case when e.shared_anonymous then null else p.display_name end,
+         e.kind
   from public.entries e
   left join public.profiles p on p.id = e.user_id
   where e.id = p_id and e.visibility = 'public';
@@ -303,6 +338,93 @@ language sql security definer stable set search_path = public as $$
   order by (e.user_id = auth.uid()) desc, e.created_at desc;
 $$;
 grant execute on function public.consciousness_dots() to authenticated;
+
+-- ---------- Community reactions ----------
+
+-- Everyone's responses to one shared memory, with the responder's name.
+-- Members only, and only for memories actually shared with the community.
+create or replace function public.list_reactions(p_entry uuid)
+returns table (id uuid, kind text, body text, created_at timestamptz, author_name text, mine boolean)
+language sql security definer stable set search_path = public as $$
+  select r.id, r.kind, r.body, r.created_at,
+         coalesce(p.display_name, split_part(p.email, '@', 1)),
+         (r.user_id = auth.uid())
+  from public.entry_reactions r
+  join public.entries e on e.id = r.entry_id
+  left join public.profiles p on p.id = r.user_id
+  where r.entry_id = p_entry and e.visibility = 'public' and public.is_active()
+  order by r.created_at asc;
+$$;
+grant execute on function public.list_reactions(uuid) to authenticated;
+
+-- Respond to a shared memory. A second 'love' toggles the first one off.
+create or replace function public.react(p_entry uuid, p_kind text, p_body text default '')
+returns void language plpgsql security definer set search_path = public as $$
+declare shared boolean;
+begin
+  if not public.is_active() then raise exception 'Members only'; end if;
+  select (visibility = 'public') into shared from public.entries where id = p_entry;
+  if not coalesce(shared, false) then raise exception 'That memory is not shared'; end if;
+
+  if p_kind = 'love' then
+    if exists (select 1 from public.entry_reactions
+               where entry_id = p_entry and user_id = auth.uid() and kind = 'love') then
+      delete from public.entry_reactions
+        where entry_id = p_entry and user_id = auth.uid() and kind = 'love';
+      return;
+    end if;
+  end if;
+
+  insert into public.entry_reactions (entry_id, user_id, kind, body)
+  values (p_entry, auth.uid(), p_kind, coalesce(p_body, ''));
+end;
+$$;
+grant execute on function public.react(uuid, text, text) to authenticated;
+
+-- Per-memory tallies for the community list, plus whether you already loved it.
+create or replace function public.reaction_counts()
+returns table (entry_id uuid, loves int, comments int, reflections int, syncs int, i_loved boolean)
+language sql security definer stable set search_path = public as $$
+  select r.entry_id,
+         count(*) filter (where r.kind = 'love')::int,
+         count(*) filter (where r.kind = 'comment')::int,
+         count(*) filter (where r.kind = 'reflection')::int,
+         count(*) filter (where r.kind = 'sync')::int,
+         bool_or(r.kind = 'love' and r.user_id = auth.uid())
+  from public.entry_reactions r
+  join public.entries e on e.id = r.entry_id
+  where e.visibility = 'public' and public.is_active()
+  group by r.entry_id;
+$$;
+grant execute on function public.reaction_counts() to authenticated;
+
+-- The dashboard mailbox: what the community said back to you.
+create or replace function public.my_inbox()
+returns table (
+  id uuid, entry_id uuid, entry_title text, entry_type text,
+  kind text, body text, created_at timestamptz, author_name text, unread boolean
+)
+language sql security definer stable set search_path = public as $$
+  select r.id, e.id, e.title, e.type, r.kind, r.body, r.created_at,
+         coalesce(p.display_name, split_part(p.email, '@', 1)),
+         (r.read_at is null)
+  from public.entry_reactions r
+  join public.entries e on e.id = r.entry_id
+  left join public.profiles p on p.id = r.user_id
+  where e.user_id = auth.uid() and r.user_id <> auth.uid()
+  order by r.created_at desc
+  limit 100;
+$$;
+grant execute on function public.my_inbox() to authenticated;
+
+-- Opening the mailbox marks everything in it as seen.
+create or replace function public.mark_inbox_read()
+returns void language sql security definer set search_path = public as $$
+  update public.entry_reactions r set read_at = now()
+  from public.entries e
+  where e.id = r.entry_id and e.user_id = auth.uid() and r.read_at is null;
+$$;
+grant execute on function public.mark_inbox_read() to authenticated;
 
 -- ---------- Storage (media bucket, private, owner-only) ----------
 insert into storage.buckets (id, name, public) values ('media','media', false)
