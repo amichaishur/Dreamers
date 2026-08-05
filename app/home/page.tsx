@@ -5,6 +5,7 @@ import Link from "next/link";
 import StarField from "@/components/StarField";
 import WeaveSphere from "@/components/WeaveSphere";
 import WeaveGraph from "@/components/WeaveGraph";
+import WeaveKnowledge from "@/components/WeaveKnowledge";
 import BottomNav from "@/components/BottomNav";
 import { theme } from "@/lib/theme";
 import { useLang } from "@/lib/i18n";
@@ -27,7 +28,7 @@ export default function HomePage() {
   const [sel, setSel] = useState<number | null>(null);
   const [zoomReq, setZoomReq] = useState(0);
   // Two shapes for the same weave, side by side while we decide which one it is.
-  const [shape, setShape] = useState<"sphere" | "graph">("sphere");
+  const [shape, setShape] = useState<"sphere" | "graph" | "knowledge">("sphere");
 
   useEffect(() => {
     let alive = true;
@@ -146,7 +147,7 @@ export default function HomePage() {
                 interactive
                 zoomRequest={zoomReq}
               />
-            ) : (
+            ) : shape === "graph" ? (
               <WeaveGraph
                 dots={p.dots}
                 lineColor={p.lineColor}
@@ -154,6 +155,16 @@ export default function HomePage() {
                 edges={edges}
                 dimOthers={mineMode}
                 showLabels={mineMode}
+                selected={sel}
+                onSelect={setSel}
+                zoomRequest={zoomReq}
+              />
+            ) : (
+              <WeaveKnowledge
+                dots={p.dots}
+                items={items}
+                edges={edges}
+                dimOthers={mineMode}
                 selected={sel}
                 onSelect={setSel}
                 zoomRequest={zoomReq}
@@ -180,7 +191,7 @@ export default function HomePage() {
           {/* Shape switch — temporary, while we choose between the two */}
           {!loading && !isEmpty && (
             <div style={{ position: "absolute", top: 6, insetInlineEnd: 2, display: "flex", gap: 4, padding: 3, borderRadius: 999, background: "rgba(28,26,52,0.72)", border: `1px solid ${p.cardBorder}`, backdropFilter: "blur(8px)", zIndex: 2 }}>
-              {([["sphere", t("mind.shapeSphere")], ["graph", t("mind.shapeGraph")]] as const).map(([k, label]) => (
+              {([["sphere", t("mind.shapeSphere")], ["graph", t("mind.shapeGraph")], ["knowledge", t("mind.shapeKnowledge")]] as const).map(([k, label]) => (
                 <button
                   key={k}
                   onClick={() => { setShape(k); setSel(null); }}

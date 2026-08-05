@@ -14,10 +14,14 @@ export type EntryKind =
   | null;
 
 /** Per-journal extras that don't deserve their own column. */
+export type SymbolType = "symbol" | "anchor" | "sign";
+export type SymbolWhere = "reality" | "dream" | "creation" | "idea";
+export type SymbolReturn = "first" | "several" | "ongoing";
+
 export type EntryMeta = {
-  symbolType?: string;      // symbols journal: what the symbol was
-  symbolWhere?: string;     // where it showed up
-  symbolRecurred?: boolean; // has it come back before
+  symbolType?: SymbolType;       // a symbol, an anchor, or a sign
+  symbolWhere?: SymbolWhere;     // which world you met it in
+  symbolReturn?: SymbolReturn;   // first time, a few times, or it walks with you
 };
 
 export type DbEntry = {

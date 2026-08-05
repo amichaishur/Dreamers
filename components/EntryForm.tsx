@@ -6,7 +6,8 @@ import DiaryHex from "@/components/DiaryHex";
 import { theme } from "@/lib/theme";
 import { DIARY_MAP, diaryStyle, DiaryKey } from "@/lib/diary";
 import { useLang } from "@/lib/i18n";
-import { Lucidity, EntryKind, EntryMeta } from "@/lib/supabase/data";
+import { Lucidity, EntryKind, EntryMeta, SymbolType, SymbolWhere, SymbolReturn } from "@/lib/supabase/data";
+import { DIARY_MAP as DIARIES_BY_KEY } from "@/lib/diary";
 
 const p = theme;
 
@@ -32,6 +33,14 @@ const KINDS: Partial<Record<DiaryKey, Exclude<EntryKind, null>[]>> = {
   reality: ["sync", "reality_check", "anomaly"],
   creation: ["creation_seed", "dream_seed"],
 };
+
+/** A star for a symbol, an anchor for an anchor, an exclamation for a sign. */
+function SymbolGlyph({ kind, color }: { kind: SymbolType; color: string }) {
+  const c = { width: 15, height: 15, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  if (kind === "symbol") return <svg {...c}><path d="M12 3.2l2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.2 6.8 19.1 8 13.3 3.6 9.3l5.9-.7z" /></svg>;
+  if (kind === "anchor") return <svg {...c}><circle cx="12" cy="5" r="2.4" /><path d="M12 7.4V21" /><path d="M6 12H18" /><path d="M4 15a8 8 0 0 0 16 0" /></svg>;
+  return <svg {...c}><circle cx="12" cy="12" r="9" /><path d="M12 7.5v5.5" /><path d="M12 16.3v.2" /></svg>;
+}
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
 function toDateStr(d: Date) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
@@ -68,9 +77,9 @@ export default function EntryForm({
   const kindChoices = KINDS[diaryKey];
   const [kind, setKind] = useState<EntryKind>(initial?.kind ?? kindChoices?.[0] ?? null);
   const isSymbols = diaryKey === "record";
-  const [symbolType, setSymbolType] = useState(initial?.meta?.symbolType ?? "");
-  const [symbolWhere, setSymbolWhere] = useState(initial?.meta?.symbolWhere ?? "");
-  const [symbolRecurred, setSymbolRecurred] = useState(initial?.meta?.symbolRecurred ?? false);
+  const [symbolType, setSymbolType] = useState<SymbolType>(initial?.meta?.symbolType ?? "symbol");
+  const [symbolWhere, setSymbolWhere] = useState<SymbolWhere>(initial?.meta?.symbolWhere ?? "reality");
+  const [symbolReturn, setSymbolReturn] = useState<SymbolReturn>(initial?.meta?.symbolReturn ?? "first");
   const [file, setFile] = useState<File | null>(null);
   const [removeExisting, setRemoveExisting] = useState(false);
   const [shared, setShared] = useState(initial?.shared ?? false);
@@ -93,9 +102,10 @@ export default function EntryForm({
   // Each journal asks in its own words, and the chosen kind can ask something
   // more specific still. A missing key falls back to the shared wording.
   const orDefault = (key: string, fallback: string) => (t(key) === key ? t(fallback) : t(key));
-  const namePlaceholder = orDefault(`ef.namePh.${diaryKey}`, "ef.namePh");
-  const detailPlaceholder =
-    kind && t(`kind.${kind}.ask`) !== `kind.${kind}.ask`
+  const namePlaceholder = isSymbols ? t("ef.metPh") : orDefault(`ef.namePh.${diaryKey}`, "ef.namePh");
+  const detailPlaceholder = isSymbols
+    ? t("ef.symbolDetailPh")
+    : kind && t(`kind.${kind}.ask`) !== `kind.${kind}.ask`
       ? t(`kind.${kind}.ask`)
       : orDefault(`ef.detailPh.${diaryKey}`, "ef.detailPh");
 
@@ -107,9 +117,7 @@ export default function EntryForm({
     setSaving(true);
     setError("");
     const createdAt = new Date(`${dateStr}T${timeStr || "00:00"}`).toISOString();
-    const meta: EntryMeta = isSymbols
-      ? { symbolType: symbolType.trim(), symbolWhere: symbolWhere.trim(), symbolRecurred }
-      : {};
+    const meta: EntryMeta = isSymbols ? { symbolType, symbolWhere, symbolReturn } : {};
     try {
       await onSubmit({ title: title.trim(), body: body.trim(), lucidity, awareness, kind, meta, file, removeExisting, shared, anonymous, createdAt });
     } catch {
@@ -164,11 +172,11 @@ export default function EntryForm({
           )}
 
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={label}>{t("ef.name")}</div>
+            <div style={label}>{isSymbols ? t("ef.metQ") : t("ef.name")}</div>
             <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={namePlaceholder} style={field} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={label}>{t("ef.detail")}</div>
+            <div style={label}>{isSymbols ? t("ef.symbolDetail") : t("ef.detail")}</div>
             {/* Every prompt sits inside the field it belongs to */}
             <textarea
               value={body}
@@ -178,24 +186,51 @@ export default function EntryForm({
             />
           </div>
 
-          {/* Symbols and anchors: what returned, and from where */}
+          {/* Symbols and anchors: what it was, which world it came from, and
+              whether it has been back. */}
           {isSymbols && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-              <div style={{ display: "flex", gap: 9 }}>
-                <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={label}>{t("ef.symbolType")}</div>
-                  <input value={symbolType} onChange={(e) => setSymbolType(e.target.value)} placeholder={t("ef.symbolTypePh")} style={field} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={label}>{t("ef.symbolWhere")}</div>
-                  <input value={symbolWhere} onChange={(e) => setSymbolWhere(e.target.value)} placeholder={t("ef.symbolWherePh")} style={field} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                <div style={label}>{t("ef.symbolType")}</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {(["symbol", "anchor", "sign"] as SymbolType[]).map((k) => (
+                    <button key={k} onClick={() => setSymbolType(k)} style={{ ...chip(symbolType === k), display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                      <SymbolGlyph kind={k} color={symbolType === k ? s.nameColor : p.subtext} />
+                      {t(`sym.${k}`)}
+                    </button>
+                  ))}
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                <div style={{ ...label, flex: 1 }}>{t("ef.symbolRecurred")}</div>
-                <div style={{ display: "flex", gap: 7, flex: "0 0 auto" }}>
-                  <button onClick={() => setSymbolRecurred(true)} style={{ ...chip(symbolRecurred), flex: "0 0 auto", padding: "8px 18px" }}>{t("ef.yes")}</button>
-                  <button onClick={() => setSymbolRecurred(false)} style={{ ...chip(!symbolRecurred), flex: "0 0 auto", padding: "8px 18px" }}>{t("ef.no")}</button>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                <div style={label}>{t("ef.symbolWhere")}</div>
+                {/* Two per row, each in the colour of the journal it belongs to */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  {(["reality", "dream", "creation", "idea"] as SymbolWhere[]).map((w) => {
+                    const c = DIARIES_BY_KEY[w].color;
+                    const on = symbolWhere === w;
+                    return (
+                      <button
+                        key={w}
+                        onClick={() => setSymbolWhere(w)}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 11, borderRadius: 13, fontSize: 13, fontWeight: on ? 700 : 500, background: on ? `${c}22` : p.cardBg, border: `1px solid ${on ? `${c}66` : p.cardBorder}`, color: on ? c : p.subtext, cursor: "pointer", font: "inherit" }}
+                      >
+                        <span style={{ width: 9, height: 9, borderRadius: "50%", background: c, boxShadow: on ? `0 0 7px ${c}` : "none", flex: "0 0 auto" }} />
+                        {t(`diary.${w}`)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                <div style={label}>{t("ef.symbolReturn")}</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {(["first", "several", "ongoing"] as SymbolReturn[]).map((r) => (
+                    <button key={r} onClick={() => setSymbolReturn(r)} style={{ ...chip(symbolReturn === r), fontSize: 12, lineHeight: 1.3, padding: "10px 8px" }}>
+                      {t(`ret.${r}`)}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
