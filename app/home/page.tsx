@@ -4,11 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import StarField from "@/components/StarField";
 import WeaveSphere from "@/components/WeaveSphere";
+import WeaveGraph from "@/components/WeaveGraph";
 import BottomNav from "@/components/BottomNav";
 import { theme } from "@/lib/theme";
 import { useLang } from "@/lib/i18n";
-import { listConsciousnessDots, getProfile, MindDot, DbProfile } from "@/lib/supabase/data";
+import { listConsciousnessDots, listEntries, getProfile, MindDot, DbEntry, DbProfile } from "@/lib/supabase/data";
 import { initialsFrom } from "@/lib/format";
+import { WeaveItem, computeEdges } from "@/lib/weave";
 
 // The weave renders one dot per memory, 1:1 with the number shown, up to this cap.
 // Beyond it (a very large community) it samples down while always keeping your own,
@@ -19,12 +21,18 @@ export default function HomePage() {
   const p = theme;
   const { t, lang } = useLang();
   const [dots, setDots] = useState<MindDot[] | null>(null);
+  const [own, setOwn] = useState<DbEntry[]>([]);
   const [profile, setProfile] = useState<DbProfile | null>(null);
   const [mode, setMode] = useState<"collective" | "mine">("collective");
+  const [sel, setSel] = useState<number | null>(null);
+  const [zoomReq, setZoomReq] = useState(0);
+  // Two shapes for the same weave, side by side while we decide which one it is.
+  const [shape, setShape] = useState<"sphere" | "graph">("sphere");
 
   useEffect(() => {
     let alive = true;
     listConsciousnessDots().then((d) => { if (alive) setDots(d); }).catch(() => { if (alive) setDots([]); });
+    listEntries().then((e) => { if (alive) setOwn(e); }).catch(() => {});
     getProfile().then((pr) => { if (alive) setProfile(pr); }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -41,6 +49,35 @@ export default function HomePage() {
   const dotScale = useMemo(() => Math.max(0.5, Math.min(1.15, Math.sqrt(110 / Math.max(1, nodes.length)))), [nodes.length]);
   const dimSphere = loading || isEmpty;
   const mineMode = mode === "mine";
+
+  // The map's memories. Only your own carry text on the device: the collective
+  // weave deliberately ships nothing but an anonymous type per entry, so other
+  // people's dreams can be counted and seen glowing but never read or linked by
+  // content. Personal mode therefore shows the full relationship map; the
+  // collective view shows the whole community as anonymous light.
+  const items = useMemo<WeaveItem[]>(() => {
+    if (mineMode) {
+      return own.map((e) => ({
+        id: e.id, title: e.title, body: e.body, type: e.type,
+        createdAt: e.created_at, lucidity: e.lucidity, mine: true,
+      }));
+    }
+    const mineIds = new Set(own.map((e) => e.id));
+    const others = nodes.filter((d) => !d.mine).map((d, i) => ({
+      id: `anon-${i}`, title: "", body: "", type: d.type,
+      createdAt: new Date(0).toISOString(), lucidity: null, mine: false,
+    }));
+    const mine = own.map((e) => ({
+      id: e.id, title: e.title, body: e.body, type: e.type,
+      createdAt: e.created_at, lucidity: e.lucidity, mine: true,
+    }));
+    void mineIds;
+    return [...mine, ...others];
+  }, [mineMode, own, nodes]);
+
+  // Relationships are computed on-device from the four rules. Entries without
+  // text (everyone else's) simply never score, so they stay unlinked.
+  const edges = useMemo(() => computeEdges(items), [items]);
 
   const countText = loading
     ? t("home.loading")
@@ -92,16 +129,99 @@ export default function HomePage() {
           <div style={{ fontSize: 11.5, color: p.subtext, marginTop: 4 }}>{countText}</div>
         </div>
 
-        {/* Weave sphere — fills the screen */}
+        {/* The weave — a map you can move through */}
         <div style={{ position: "relative", flex: "1 1 auto", minHeight: 320, marginTop: 6 }}>
           <div style={{ position: "absolute", inset: 0, background: p.coreGlow, pointerEvents: "none", opacity: dimSphere ? 0.4 : 1 }} />
           <div style={{ position: "absolute", inset: 0, opacity: dimSphere ? 0.35 : 1, transition: "opacity 0.5s" }}>
             {loading ? (
               <WeaveSphere dots={p.dots} lineColor={p.lineColor} count={8} frozen />
+            ) : shape === "sphere" ? (
+              <WeaveSphere
+                dots={p.dots}
+                lineColor={p.lineColor}
+                nodes={nodes}
+                dotScale={dotScale}
+                dimOthers={mineMode}
+                frozen={isEmpty}
+                interactive
+                zoomRequest={zoomReq}
+              />
             ) : (
-              <WeaveSphere dots={p.dots} lineColor={p.lineColor} nodes={nodes} dotScale={dotScale} dimOthers={mineMode} frozen={isEmpty} />
+              <WeaveGraph
+                dots={p.dots}
+                lineColor={p.lineColor}
+                items={items}
+                edges={edges}
+                dimOthers={mineMode}
+                showLabels={mineMode}
+                selected={sel}
+                onSelect={setSel}
+                zoomRequest={zoomReq}
+              />
             )}
           </div>
+
+          {/* Zoom controls */}
+          {!loading && !isEmpty && (
+            <div style={{ position: "absolute", top: 6, insetInlineStart: 2, display: "flex", flexDirection: "column", gap: 6, zIndex: 2 }}>
+              {[["+", 1], ["−", -1]].map(([label, dir]) => (
+                <button
+                  key={label as string}
+                  onClick={() => setZoomReq((v) => v + (dir as number))}
+                  aria-label={dir === 1 ? t("mind.zoomIn") : t("mind.zoomOut")}
+                  style={{ width: 30, height: 30, borderRadius: 10, background: "rgba(28,26,52,0.72)", border: `1px solid ${p.cardBorder}`, color: p.text, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, backdropFilter: "blur(8px)" }}
+                >
+                  {label as string}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Shape switch — temporary, while we choose between the two */}
+          {!loading && !isEmpty && (
+            <div style={{ position: "absolute", top: 6, insetInlineEnd: 2, display: "flex", gap: 4, padding: 3, borderRadius: 999, background: "rgba(28,26,52,0.72)", border: `1px solid ${p.cardBorder}`, backdropFilter: "blur(8px)", zIndex: 2 }}>
+              {([["sphere", t("mind.shapeSphere")], ["graph", t("mind.shapeGraph")]] as const).map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => { setShape(k); setSel(null); }}
+                  style={{ border: "none", cursor: "pointer", font: "inherit", fontSize: 11, fontWeight: 700, padding: "5px 10px", borderRadius: 999, background: shape === k ? `linear-gradient(135deg, ${p.fabFrom}, ${p.fabTo})` : "transparent", color: shape === k ? "#fff" : p.subtext }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Tapped memory: title plus what it connects to and why */}
+          {sel !== null && items[sel] && items[sel].mine && (
+            <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "12px 14px", borderRadius: 16, background: "linear-gradient(180deg, rgba(20,18,44,0.86), rgba(11,11,26,0.95))", border: `1px solid ${p.cardBorder}`, backdropFilter: "blur(16px)", zIndex: 2 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <span style={{ width: 9, height: 9, borderRadius: "50%", background: p.dots[items[sel].type], boxShadow: `0 0 7px ${p.dots[items[sel].type]}`, flex: "0 0 auto" }} />
+                <Link href={`/entry/${items[sel].id}`} style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 700, color: p.text, textDecoration: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {items[sel].title}
+                </Link>
+                <button onClick={() => setSel(null)} aria-label={t("mind.close")} style={{ width: 24, height: 24, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.08)", color: p.subtext, cursor: "pointer", flex: "0 0 auto", fontSize: 13, lineHeight: 1 }}>×</button>
+              </div>
+              {(() => {
+                const linked = edges.filter((e) => e.a === sel || e.b === sel).sort((x, y) => y.strength - x.strength).slice(0, 3);
+                if (!linked.length) return <div style={{ fontSize: 11.5, color: p.subtext, marginTop: 6 }}>{t("mind.noLinks")}</div>;
+                return (
+                  <div style={{ marginTop: 7, display: "flex", flexDirection: "column", gap: 5 }}>
+                    {linked.map((e, k) => {
+                      const o = items[e.a === sel ? e.b : e.a];
+                      return (
+                        <div key={k} style={{ fontSize: 11.5, color: p.subtext, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          <span style={{ color: p.text }}>{o.title}</span>
+                          {" · "}{e.reasons[0]}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
           {isEmpty && (
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "0 30px", pointerEvents: "none" }}>
               <div style={{ fontSize: 16.5, fontWeight: 700 }}>{t("home.emptyTitle")}</div>
