@@ -72,7 +72,9 @@ export default function WeaveGraph({
         near.push([dx * dx + dy * dy, j]);
       }
       near.sort((a, b) => a[0] - b[0]);
-      for (let k = 0; k < Math.min(3, near.length); k++) {
+      // Fewer threads each as the weave grows, or a big one turns into a fog of lines.
+      const links = pts.length > 120 ? 1 : pts.length > 60 ? 2 : 3;
+      for (let k = 0; k < Math.min(links, near.length); k++) {
         const j = near[k][1];
         const key = `${Math.min(i, j)}-${Math.max(i, j)}`;
         if (seen.has(key) || linked.has(key)) continue;
@@ -156,7 +158,10 @@ export default function WeaveGraph({
         ctx.beginPath(); ctx.moveTo(A.sx, A.sy); ctx.lineTo(B.sx, B.sy); ctx.stroke();
       }
 
-      // Memories, drawn additively so neighbouring glows melt together.
+      // Memories, drawn additively so neighbouring glows melt together. Additive
+      // light stacks, so a crowded weave has to burn softer per memory or the
+      // dense parts blow out into white.
+      const crowd = Math.max(0.42, Math.min(1, Math.sqrt(70 / Math.max(1, items.length))));
       const order = proj.map((_, i) => i).sort((a, b) => proj[a].weight - proj[b].weight);
       ctx.globalCompositeOperation = "lighter";
       for (const i of order) {
@@ -171,8 +176,8 @@ export default function WeaveGraph({
         const shim = 0.88 + 0.12 * Math.sin(time * 0.0017 + p.seed);
         // Size stays put; only the light changes, so quiet memories still hold
         // their place in the shape.
-        const size = (4 + dep * dep * 11) * (0.95 + 0.05 * shim) * z * p.weight * (0.66 + 0.34 * bri);
-        const a = Math.min(1, (0.13 + dep * dep * 0.92) * shim * bri);
+        const size = (4 + dep * dep * 11) * (0.95 + 0.05 * shim) * z * p.weight * (0.66 + 0.34 * bri) * crowd;
+        const a = Math.min(1, (0.13 + dep * dep * 0.92) * shim * bri * (lit ? 1 : crowd));
         const pastel = mix(p.color, "#ffffff", 0.28);
         const g = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, Math.max(0.5, size));
         g.addColorStop(0, rgba(pastel, a));

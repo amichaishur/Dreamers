@@ -218,16 +218,30 @@ export function layoutGraph(n: number, edges: WeaveEdge[], groups?: number[], se
     pts.push({ x: c.x + (rand() - 0.5) * 90 * sp, y: c.y + (rand() - 0.5) * 90 * sp });
   }
 
-  const minGap = Math.max(26, 74 - n * 0.28);
+  // Personal space varies per memory. Pushing everything apart by the same
+  // distance is what crystallises a big weave into visible rows and diamonds,
+  // so each one keeps its own slightly different distance.
+  // Density belongs to the lobe: some knots sit tight, others breathe. Uniform
+  // spacing everywhere is the other half of what makes a big weave look like a grid.
+  const baseGap = Math.max(26, 74 - n * 0.28);
+  const gap = Array.from({ length: n }, (_, i) =>
+    baseGap * (spread.get(lobe[i]) ?? 1) * (0.78 + rand() * 0.5)
+  );
 
-  for (let iter = 0; iter < 420; iter++) {
-    const cool = 1 - iter / 560;
+  // A big weave settles for fewer rounds on purpose. Left to run, repulsion keeps
+  // optimising until every memory sits the same distance from its neighbours and
+  // the whole thing turns into graph paper. Stopping early keeps the scatter it
+  // started with; a small weave has room to arrange itself properly.
+  const rounds = n > 120 ? 110 : n > 60 ? 260 : 420;
+  for (let iter = 0; iter < rounds; iter++) {
+    const cool = 1 - iter / (rounds * 1.35);
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
         const dx = pts[j].x - pts[i].x, dy = pts[j].y - pts[i].y;
         const d = Math.hypot(dx, dy) || 0.01;
-        if (d < minGap) {
-          const f = ((minGap - d) / d) * 0.055 * cool;
+        const want = (gap[i] + gap[j]) / 2;
+        if (d < want) {
+          const f = ((want - d) / d) * 0.05 * cool;
           pts[i].x -= dx * f; pts[i].y -= dy * f;
           pts[j].x += dx * f; pts[j].y += dy * f;
         }
@@ -238,16 +252,17 @@ export function layoutGraph(n: number, edges: WeaveEdge[], groups?: number[], se
       const dx = b.x - a.x, dy = b.y - a.y;
       const d = Math.hypot(dx, dy) || 0.01;
       // Stronger links sit closer, so clusters read as themes at a glance.
-      const rest = Math.max(minGap * 0.62, minGap * 1.15 - e.strength * 7);
+      const rest = Math.max(baseGap * 0.62, baseGap * 1.15 - e.strength * 7);
       const f = ((d - rest) / d) * 0.05 * cool;
       a.x += dx * f; a.y += dy * f;
       b.x -= dx * f; b.y -= dy * f;
     }
-    // Each memory drifts toward its own lobe, not toward the middle of the screen.
+    // Each memory drifts toward its own lobe, not toward the middle of the screen,
+    // with a little wander so the settling never locks into a grid.
     for (let i = 0; i < n; i++) {
       const c = anchor.get(lobe[i])!;
-      pts[i].x += (c.x - pts[i].x) * 0.006 * cool;
-      pts[i].y += (c.y - pts[i].y) * 0.006 * cool;
+      pts[i].x += (c.x - pts[i].x) * 0.006 * cool + (rand() - 0.5) * 1.6 * cool;
+      pts[i].y += (c.y - pts[i].y) * 0.006 * cool + (rand() - 0.5) * 1.6 * cool;
     }
   }
 
