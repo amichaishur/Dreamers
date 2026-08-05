@@ -90,6 +90,15 @@ export default function EntryForm({
   const label: React.CSSProperties = { fontSize: 12.5, fontWeight: 600, color: p.subtext };
   const chip = (on: boolean): React.CSSProperties => ({ flex: 1, textAlign: "center", padding: 11, borderRadius: 13, fontSize: 13, fontWeight: on ? 700 : 500, background: on ? s.chipBg : p.cardBg, border: `1px solid ${on ? s.bordStrong : p.cardBorder}`, color: on ? s.nameColor : p.subtext, cursor: "pointer" });
 
+  // Each journal asks in its own words, and the chosen kind can ask something
+  // more specific still. A missing key falls back to the shared wording.
+  const orDefault = (key: string, fallback: string) => (t(key) === key ? t(fallback) : t(key));
+  const namePlaceholder = orDefault(`ef.namePh.${diaryKey}`, "ef.namePh");
+  const detailPlaceholder =
+    kind && t(`kind.${kind}.ask`) !== `kind.${kind}.ask`
+      ? t(`kind.${kind}.ask`)
+      : orDefault(`ef.detailPh.${diaryKey}`, "ef.detailPh");
+
   const showExisting = !!existingMediaName && !removeExisting && !file;
   const attachLabel = file ? file.name : showExisting ? existingMediaName! : t("ef.attachFile");
 
@@ -156,15 +165,17 @@ export default function EntryForm({
 
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={label}>{t("ef.name")}</div>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("ef.namePh")} style={field} />
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={namePlaceholder} style={field} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={label}>{t("ef.detail")}</div>
-            {/* The chosen kind brings its own guiding questions */}
-            {kind && t(`kind.${kind}.ask`) !== `kind.${kind}.ask` && (
-              <div style={{ fontSize: 11.5, color: s.nameColor, lineHeight: 1.5 }}>{t(`kind.${kind}.ask`)}</div>
-            )}
-            <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder={t("ef.detailPh")} style={{ ...field, height: 70, fontSize: 14, lineHeight: 1.5, resize: "none" }} />
+            {/* Every prompt sits inside the field it belongs to */}
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder={detailPlaceholder}
+              style={{ ...field, height: 70, fontSize: 14, lineHeight: 1.5, resize: "none" }}
+            />
           </div>
 
           {/* Symbols and anchors: what returned, and from where */}

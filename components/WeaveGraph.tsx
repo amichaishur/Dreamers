@@ -35,23 +35,67 @@ export default function WeaveGraph({
   const selRef = useRef<number | null>(selected);
   selRef.current = selected;
 
-  const pts = useMemo(() => layoutGraph(items.length, edges), [items.length, edges]);
+  // Journal type doubles as the lobe for memories that have no links of their own,
+  // so the map still forms clusters instead of one even field.
+  const groups = useMemo(() => {
+    const order: string[] = [];
+    return items.map((it) => {
+      let k = order.indexOf(it.type);
+      if (k < 0) { k = order.length; order.push(it.type); }
+      return k;
+    });
+  }, [items]);
+  const pts = useMemo(() => layoutGraph(items.length, edges, groups), [items.length, edges, groups]);
   const degree = useMemo(() => {
     const d = new Array(items.length).fill(0);
     edges.forEach((e) => { d[e.a]++; d[e.b]++; });
     return d;
   }, [items.length, edges]);
 
+  /**
+   * The web itself. Rule-based links carry meaning, but a memory whose text we
+   * never receive (everyone else's, in the collective view) would otherwise float
+   * alone and the map would read as scattered dots. So every memory is also tied
+   * to its nearest neighbours with faint threads: structure you can see, drawn
+   * quieter than the links that actually mean something.
+   */
+  const mesh = useMemo(() => {
+    const out: [number, number][] = [];
+    if (pts.length < 3) return out;
+    const seen = new Set<string>();
+    const linked = new Set(edges.map((e) => `${Math.min(e.a, e.b)}-${Math.max(e.a, e.b)}`));
+    for (let i = 0; i < pts.length; i++) {
+      const near: [number, number][] = [];
+      for (let j = 0; j < pts.length; j++) {
+        if (i === j) continue;
+        const dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y;
+        near.push([dx * dx + dy * dy, j]);
+      }
+      near.sort((a, b) => a[0] - b[0]);
+      for (let k = 0; k < Math.min(3, near.length); k++) {
+        const j = near[k][1];
+        const key = `${Math.min(i, j)}-${Math.max(i, j)}`;
+        if (seen.has(key) || linked.has(key)) continue;
+        seen.add(key);
+        out.push([i, j]);
+      }
+    }
+    return out;
+  }, [pts, edges]);
+
+  // Tapping lights up whatever a memory touches, meaningful link or plain thread.
   const neighbours = useMemo(() => {
     const m = new Map<number, Set<number>>();
-    edges.forEach((e) => {
-      if (!m.has(e.a)) m.set(e.a, new Set());
-      if (!m.has(e.b)) m.set(e.b, new Set());
-      m.get(e.a)!.add(e.b);
-      m.get(e.b)!.add(e.a);
-    });
+    const add = (a: number, b: number) => {
+      if (!m.has(a)) m.set(a, new Set());
+      if (!m.has(b)) m.set(b, new Set());
+      m.get(a)!.add(b);
+      m.get(b)!.add(a);
+    };
+    edges.forEach((e) => add(e.a, e.b));
+    mesh.forEach(([a, b]) => add(a, b));
     return m;
-  }, [edges]);
+  }, [edges, mesh]);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -82,15 +126,26 @@ export default function WeaveGraph({
         sx: cx + (p.x + ox) * z,
         sy: cy + (p.y + oy) * z,
         color: dots[items[i].type] || "#9aa",
-        bri: dimOthers && !items[i].mine ? 0.22 : 1,
+        // Only your own memories carry light. Everyone else's are present as
+        // quiet points, so the collective weave reads as your thread running
+        // through it rather than a wall of equal glow.
+        bri: items[i].mine ? 1 : dimOthers ? 0.12 : 0.2,
         seed: ((i * 37) % 100) / 15,
         // Well-connected memories read as brighter and larger: a recurring theme
         // literally grows into a bigger star.
         weight: 0.72 + 0.62 * (degree[i] / maxDeg),
       }));
 
-      // Links first, underneath the glow.
+      // The quiet web first, then the links that mean something, then the glow.
       ctx.globalCompositeOperation = "source-over";
+      ctx.lineWidth = Math.max(0.4, 0.7 * Math.min(z, 2));
+      for (const [a, b] of mesh) {
+        const A = proj[a], B = proj[b];
+        const near = sel !== null && (a === sel || b === sel);
+        const eb = (A.bri + B.bri) / 2;
+        ctx.strokeStyle = rgba(lineColor, near ? 0.5 : (0.05 + 0.09 * eb) * (sel === null ? 1 : 0.45));
+        ctx.beginPath(); ctx.moveTo(A.sx, A.sy); ctx.lineTo(B.sx, B.sy); ctx.stroke();
+      }
       for (const e of edges) {
         const A = proj[e.a], B = proj[e.b];
         const eb = (A.bri + B.bri) / 2;
@@ -106,12 +161,17 @@ export default function WeaveGraph({
       ctx.globalCompositeOperation = "lighter";
       for (const i of order) {
         const p = proj[i];
-        const faded = sel !== null && i !== sel && !(neighbours.get(sel)?.has(i));
-        const bri = p.bri * (faded ? 0.34 : 1);
+        // Tapping a memory lights it up, whoever it belongs to, along with
+        // whatever it is linked to.
+        const lit = sel !== null && (i === sel || neighbours.get(sel)?.has(i));
+        const faded = sel !== null && !lit;
+        const bri = lit ? 1 : p.bri * (faded ? 0.34 : 1);
         // Flat map, so every memory sits at the sphere's bright front face.
         const dep = 0.94;
         const shim = 0.88 + 0.12 * Math.sin(time * 0.0017 + p.seed);
-        const size = (4 + dep * dep * 11) * (0.95 + 0.05 * shim) * z * p.weight;
+        // Size stays put; only the light changes, so quiet memories still hold
+        // their place in the shape.
+        const size = (4 + dep * dep * 11) * (0.95 + 0.05 * shim) * z * p.weight * (0.66 + 0.34 * bri);
         const a = Math.min(1, (0.13 + dep * dep * 0.92) * shim * bri);
         const pastel = mix(p.color, "#ffffff", 0.28);
         const g = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, Math.max(0.5, size));
@@ -160,7 +220,7 @@ export default function WeaveGraph({
 
     raf = requestAnimationFrame(draw);
     return () => { stopped = true; cancelAnimationFrame(raf); };
-  }, [dots, lineColor, items, edges, pts, degree, neighbours, dimOthers, showLabels]);
+  }, [dots, lineColor, items, edges, pts, mesh, degree, neighbours, dimOthers, showLabels]);
 
   // ---- Pan, zoom, tap ----
   useEffect(() => {

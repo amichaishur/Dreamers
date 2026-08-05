@@ -122,30 +122,106 @@ export function computeEdges(items: WeaveItem[]): WeaveEdge[] {
 
 export type Pt = { x: number; y: number };
 
+/** Deterministic pseudo-random, so the map looks the same every time you open it. */
+function rng(seed: number) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
 /**
- * Force-directed layout: linked memories pull together, everything repels so
- * nothing overlaps. Runs once up front (not per frame) and is deterministic,
- * so the map looks the same every time you open it.
+ * Force-directed layout. Related memories pull together and everything repels,
+ * but the important part is what it must NOT look like: a tidy disc. Memories
+ * are grouped into lobes (linked ones by what they share, the rest by journal),
+ * each lobe gets its own off-centre anchor, and the result is scaled per axis.
+ * That gives the uneven, brain-like sprawl of a knowledge graph rather than a ball.
  */
-export function layoutGraph(n: number, edges: WeaveEdge[], seedRadius = 150): Pt[] {
+export function layoutGraph(n: number, edges: WeaveEdge[], groups?: number[], seedRadius = 150): Pt[] {
   if (n === 0) return [];
-  // Golden-angle seeding gives an even, non-clumped starting spread.
+  const rand = rng(n * 7919 + edges.length * 104729);
+
+  // Lobes: linked memories share one (via connected components), and anything
+  // unlinked falls back to the group it was handed (its journal).
+  const lobe = new Array(n).fill(-1);
+  const adj = new Map<number, number[]>();
+  edges.forEach((e) => {
+    if (!adj.has(e.a)) adj.set(e.a, []);
+    if (!adj.has(e.b)) adj.set(e.b, []);
+    adj.get(e.a)!.push(e.b);
+    adj.get(e.b)!.push(e.a);
+  });
+  let next = 0;
+  for (let i = 0; i < n; i++) {
+    if (lobe[i] !== -1 || !adj.has(i)) continue;
+    const id = next++;
+    const stack = [i];
+    while (stack.length) {
+      const v = stack.pop()!;
+      if (lobe[v] !== -1) continue;
+      lobe[v] = id;
+      (adj.get(v) ?? []).forEach((w) => { if (lobe[w] === -1) stack.push(w); });
+    }
+  }
+  // Unlinked memories fall back to their journal, then those buckets are broken
+  // into smaller knots of uneven size. One lobe per journal would just draw five
+  // even blobs; many uneven ones is what reads as a mind rather than a diagram.
+  const fallbackBase = next;
+  const bucket = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) {
+    if (lobe[i] !== -1) continue;
+    const g = groups?.[i] ?? 0;
+    if (!bucket.has(g)) bucket.set(g, []);
+    bucket.get(g)!.push(i);
+  }
+  let sub = fallbackBase;
+  bucket.forEach((members) => {
+    let at = 0;
+    while (at < members.length) {
+      const take = Math.max(3, Math.round(4 + rand() * 11));
+      const id = sub++;
+      for (let k = at; k < Math.min(members.length, at + take); k++) lobe[members[k]] = id;
+      at += take;
+    }
+  });
+  const lobeIds = [...new Set(lobe)];
+
+  // Anchors are scattered by rejection sampling, not spaced around a ring, and
+  // the field they land in is deliberately wider than it is tall. Even spacing is
+  // exactly what would pull the whole thing back into a disc.
+  const anchor = new Map<number, Pt>();
+  const placed: Pt[] = [];
+  const spanX = seedRadius * 1.75, spanY = seedRadius * 1.05;
+  lobeIds.forEach((id) => {
+    let best: Pt | null = null, bestGap = -1;
+    for (let tries = 0; tries < 24; tries++) {
+      const c = { x: (rand() - 0.5) * 2 * spanX, y: (rand() - 0.5) * 2 * spanY };
+      let gap = Infinity;
+      for (const q of placed) gap = Math.min(gap, Math.hypot(c.x - q.x, c.y - q.y));
+      if (placed.length === 0) { best = c; break; }
+      if (gap > bestGap) { bestGap = gap; best = c; }
+    }
+    placed.push(best!);
+    anchor.set(id, best!);
+  });
+
+  // Lobes differ in how tightly they hold, so some read as dense knots and
+  // others as loose drifts.
+  const spread = new Map<number, number>();
+  lobeIds.forEach((id) => spread.set(id, 0.55 + rand() * 1.15));
+
   const pts: Pt[] = [];
   for (let i = 0; i < n; i++) {
-    const ang = i * 2.399963;
-    const rr = Math.sqrt((i + 0.7) / n);
-    pts.push({ x: Math.cos(ang) * rr * seedRadius, y: Math.sin(ang) * rr * seedRadius * 0.9 });
+    const c = anchor.get(lobe[i])!;
+    const sp = spread.get(lobe[i])!;
+    pts.push({ x: c.x + (rand() - 0.5) * 90 * sp, y: c.y + (rand() - 0.5) * 90 * sp });
   }
 
-  const deg = new Array(n).fill(0);
-  edges.forEach((e) => { deg[e.a]++; deg[e.b]++; });
+  const minGap = Math.max(26, 74 - n * 0.28);
 
-  // Spacing scales with how many memories there are, so a big weave stays as
-  // readable as a small one instead of turning into a solid blob.
-  const minGap = Math.max(30, 96 - n * 0.55);
-
-  for (let iter = 0; iter < 400; iter++) {
-    const cool = 1 - iter / 520;
+  for (let iter = 0; iter < 420; iter++) {
+    const cool = 1 - iter / 560;
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
         const dx = pts[j].x - pts[i].x, dy = pts[j].y - pts[i].y;
@@ -167,17 +243,23 @@ export function layoutGraph(n: number, edges: WeaveEdge[], seedRadius = 150): Pt
       a.x += dx * f; a.y += dy * f;
       b.x -= dx * f; b.y -= dy * f;
     }
-    // Gentle pull to centre keeps unconnected memories from drifting off-screen.
-    for (let i = 0; i < n; i++) { pts[i].x *= 0.9975; pts[i].y *= 0.9975; }
+    // Each memory drifts toward its own lobe, not toward the middle of the screen.
+    for (let i = 0; i < n; i++) {
+      const c = anchor.get(lobe[i])!;
+      pts[i].x += (c.x - pts[i].x) * 0.006 * cool;
+      pts[i].y += (c.y - pts[i].y) * 0.006 * cool;
+    }
   }
 
-  // Normalise to a fixed radius so the weave always fills the view nicely,
-  // whether it holds 8 memories or 800.
-  let maxR = 0;
-  for (const p of pts) maxR = Math.max(maxR, Math.hypot(p.x, p.y));
-  if (maxR > 0) {
-    const k = seedRadius / maxR;
-    for (const p of pts) { p.x *= k; p.y *= k; }
+  // Fit to the view with a single scale for both axes: scaling each axis
+  // separately would stretch the sprawl back into a tidy square.
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of pts) {
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
   }
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  const k = (seedRadius * 2) / Math.max(maxX - minX, maxY - minY, 1);
+  for (const p of pts) { p.x = (p.x - cx) * k; p.y = (p.y - cy) * k; }
   return pts;
 }
