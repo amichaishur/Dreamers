@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import { getProfile, listEntries, uploadAvatar, setProfileAvatar, DbProfile, DbEntry } from "@/lib/supabase/data";
 import { computeStats } from "@/lib/stats";
 import { initialsFrom } from "@/lib/format";
+import { isMuted, setMuted, playSignal } from "@/lib/chime";
 
 const BG = "linear-gradient(168deg,#0C0C1E 0%,#160F30 52%,#241A44 100%)";
 const GoogleIcon = ({ s = 12 }: { s?: number }) => (
@@ -20,6 +21,9 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<DbProfile | null | undefined>(undefined);
   const [entries, setEntries] = useState<DbEntry[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [muted, setMutedState] = useState(false);
+  // Read on the client only: localStorage does not exist while rendering on the server.
+  useEffect(() => { setMutedState(isMuted()); }, []);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -135,6 +139,21 @@ export default function ProfilePage() {
               <button onClick={() => setLang("he")} style={langBtn(lang === "he")}>עברית</button>
               <button onClick={() => setLang("en")} style={langBtn(lang === "en")}>English</button>
             </div>
+          </div>
+          <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "0 16px" }} />
+          {/* Sound for a response, and the way to turn it off */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 16px" }}>
+            <div style={{ width: 30, height: 30, flex: "0 0 auto", borderRadius: 9, background: "rgba(183,156,235,0.16)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C9B6F2" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5Z" />{!muted && <><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></>}{muted && <path d="M17 9l4 6M21 9l-4 6" />}</svg>
+            </div>
+            <span style={{ flex: 1, fontSize: 14.5, fontWeight: 500 }}>{t("pf.sound")}</span>
+            <button
+              onClick={() => { const next = !muted; setMutedState(next); setMuted(next); if (!next) playSignal(); }}
+              aria-pressed={!muted}
+              style={{ padding: "6px 14px", borderRadius: 9, border: "none", cursor: "pointer", font: "inherit", fontSize: 12.5, fontWeight: 600, background: muted ? "rgba(255,255,255,0.07)" : "linear-gradient(135deg,#6E8BFF,#9A6CFF)", color: muted ? "rgba(236,231,250,0.6)" : "#fff" }}
+            >
+              {muted ? t("pf.soundOff") : t("pf.soundOn")}
+            </button>
           </div>
           <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "0 16px" }} />
           <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 16px" }}>

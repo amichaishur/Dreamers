@@ -46,6 +46,11 @@ export type SharedEntry = {
   title: string;
   body: string;
   lucidity: Lucidity | null;
+  // Whatever the journal asked for travels with the memory, so a reader sees the
+  // same shape the writer filled in rather than a stripped-down version of it.
+  awareness: Lucidity | null;
+  kind: EntryKind;
+  meta: EntryMeta;
   shared_media_url: string | null;
   created_at: string;
   shared_anonymous: boolean;
@@ -248,7 +253,7 @@ export async function listSharedEntries(): Promise<SharedEntry[]> {
 }
 
 export async function getSharedEntry(id: string): Promise<SharedEntry | null> {
-  if (demoEnabled()) return demoSharedList().find((e) => e.id === id) ?? null;
+  if (demoEnabled()) return demoSharedOrMine(id);
   const supabase = createClient();
   const { data, error } = await supabase.rpc("get_shared_entry", { p_id: id });
   if (error) return null;
@@ -407,6 +412,25 @@ function demoReactions(entryId: string): Reaction[] {
   return seeded;
 }
 
+/**
+ * In production `get_shared_entry` returns any memory shared with the community,
+ * including your own — which is how the mailbox opens a dream someone answered.
+ * Preview has to mirror that, or those links dead-end.
+ */
+function demoSharedOrMine(id: string): SharedEntry | null {
+  const shared = demoSharedList().find((e) => e.id === id);
+  if (shared) return shared;
+  const own = demoPersonalEntries().find((e) => e.id === id && e.visibility === "public");
+  if (!own) return null;
+  return {
+    id: own.id, type: own.type, title: own.title, body: own.body,
+    lucidity: own.lucidity, awareness: own.awareness, kind: own.kind, meta: own.meta,
+    shared_media_url: own.shared_media_url,
+    created_at: own.created_at, shared_anonymous: own.shared_anonymous,
+    author_name: demoProfileObj().display_name,
+  };
+}
+
 function demoReact(entryId: string, kind: ReactionKind, body: string) {
   const rows = demoReactions(entryId).slice();
   if (kind === "love") {
@@ -463,6 +487,17 @@ function demoSharedList(): SharedEntry[] {
       title: DEMO_TITLES[(i + 3) % DEMO_TITLES.length],
       body: "חלום ששותף לקהילה במצב תצוגה. הפרטים המלאים נראים רק בקהילה.",
       lucidity: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(6 + 3 * Math.sin(i * 0.9))))) : null,
+      awareness: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(5 + 3 * Math.cos(i * 0.7))))) : null,
+      kind: type === "reality"
+        ? (["sync", "reality_check", "anomaly"] as const)[i % 3]
+        : type === "creation" ? (["creation_seed", "dream_seed"] as const)[i % 2] : null,
+      meta: type === "record"
+        ? {
+            symbolType: (["symbol", "anchor", "sign"] as const)[i % 3],
+            symbolWhere: (["reality", "dream", "creation", "idea"] as const)[i % 4],
+            symbolReturn: (["first", "several", "ongoing"] as const)[i % 3],
+          }
+        : {},
       shared_media_url: null,
       created_at: demoDateISO(i + 1),
       shared_anonymous: author === null,

@@ -4,6 +4,7 @@ import "./globals.css";
 import { theme, OUTER_BG } from "@/lib/theme";
 import { LangProvider } from "@/lib/i18n";
 import { EntrySheetProvider } from "@/components/EntrySheet";
+import ReactionAlerts from "@/components/ReactionAlerts";
 
 const heebo = Heebo({
   subsets: ["hebrew", "latin"],
@@ -60,7 +61,11 @@ export default function RootLayout({
                 overflow: "hidden",
               }}
             >
-              <EntrySheetProvider>{children}</EntrySheetProvider>
+              <EntrySheetProvider>
+                {children}
+                {/* Mounted once here so a response reaches you from any screen */}
+                <ReactionAlerts />
+              </EntrySheetProvider>
             </div>
           </div>
         </LangProvider>

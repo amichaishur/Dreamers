@@ -271,13 +271,13 @@ create or replace function public.list_shared_entries()
 returns table (
   id uuid, type text, title text, body text, lucidity text,
   shared_media_url text, created_at timestamptz, shared_anonymous boolean,
-  author_name text, kind text
+  author_name text, kind text, awareness text, meta jsonb
 )
 language sql security definer stable set search_path = public as $$
   select e.id, e.type, e.title, e.body, e.lucidity,
          e.shared_media_url, e.created_at, e.shared_anonymous,
          case when e.shared_anonymous then null else p.display_name end,
-         e.kind
+         e.kind, e.awareness, e.meta
   from public.entries e
   left join public.profiles p on p.id = e.user_id
   where e.visibility = 'public' and public.is_active()
@@ -293,13 +293,13 @@ create or replace function public.get_shared_entry(p_id uuid)
 returns table (
   id uuid, type text, title text, body text, lucidity text,
   shared_media_url text, created_at timestamptz, shared_anonymous boolean,
-  author_name text, kind text
+  author_name text, kind text, awareness text, meta jsonb
 )
 language sql security definer stable set search_path = public as $$
   select e.id, e.type, e.title, e.body, e.lucidity,
          e.shared_media_url, e.created_at, e.shared_anonymous,
          case when e.shared_anonymous then null else p.display_name end,
-         e.kind
+         e.kind, e.awareness, e.meta
   from public.entries e
   left join public.profiles p on p.id = e.user_id
   where e.id = p_id and e.visibility = 'public';
