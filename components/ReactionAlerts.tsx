@@ -33,6 +33,17 @@ export default function ReactionAlerts() {
     hideTimer.current = window.setTimeout(() => setItem(null), 5200);
   };
 
+  // The profile's sound row asks for a demonstration, so you can see and hear
+  // exactly what a response looks like without waiting for one.
+  useEffect(() => {
+    const preview = async () => {
+      const rows = await listInbox().catch(() => [] as InboxItem[]);
+      if (rows.length) show(rows[0]);
+    };
+    window.addEventListener("dreamers:preview-alert", preview);
+    return () => window.removeEventListener("dreamers:preview-alert", preview);
+  }, []);
+
   useEffect(() => {
     let alive = true;
 
@@ -42,7 +53,15 @@ export default function ReactionAlerts() {
       .then((rows) => { if (alive) seen.current = new Set(rows.map((r) => r.id)); })
       .catch(() => { if (alive) seen.current = new Set(); });
 
-    if (demoEnabled()) return () => { alive = false; };
+    // Preview has no live database to listen to, so it stages one response a few
+    // seconds in, which is the only way to see and hear the real thing here.
+    if (demoEnabled()) {
+      const demo = window.setTimeout(async () => {
+        const rows = await listInbox().catch(() => [] as InboxItem[]);
+        if (alive && rows.length) show(rows[0]);
+      }, 3500);
+      return () => { alive = false; window.clearTimeout(demo); };
+    }
 
     const supabase = createClient();
     const channel = supabase

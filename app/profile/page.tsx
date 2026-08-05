@@ -146,7 +146,18 @@ export default function ProfilePage() {
             <div style={{ width: 30, height: 30, flex: "0 0 auto", borderRadius: 9, background: "rgba(183,156,235,0.16)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C9B6F2" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5Z" />{!muted && <><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></>}{muted && <path d="M17 9l4 6M21 9l-4 6" />}</svg>
             </div>
-            <span style={{ flex: 1, fontSize: 14.5, fontWeight: 500 }}>{t("pf.sound")}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 500 }}>{t("pf.sound")}</div>
+              <div style={{ fontSize: 11.5, color: "rgba(236,231,250,0.5)", marginTop: 1 }}>{t("pf.soundName")}</div>
+            </div>
+            {/* Always available, so you can hear it without waiting for someone to answer */}
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent("dreamers:preview-alert"))}
+              aria-label={t("pf.soundPlay")}
+              style={{ width: 32, height: 32, borderRadius: "50%", flex: "0 0 auto", border: "1px solid rgba(255,255,255,0.14)", background: "rgba(255,255,255,0.06)", color: "#C9B6F2", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z" /></svg>
+            </button>
             <button
               onClick={() => { const next = !muted; setMutedState(next); setMuted(next); if (!next) playSignal(); }}
               aria-pressed={!muted}

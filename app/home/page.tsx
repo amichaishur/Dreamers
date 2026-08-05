@@ -18,6 +18,9 @@ import { WeaveItem, computeEdges } from "@/lib/weave";
 // and each dot auto-shrinks so the sphere stays dense and beautiful as it grows.
 const MAX_DOTS = 400;
 
+/** Only while developing: deployed builds show the weave and nothing to switch. */
+const SHOW_SHAPE_PICKER = process.env.NODE_ENV === "development";
+
 export default function HomePage() {
   const p = theme;
   const { t, lang } = useLang();
@@ -26,8 +29,10 @@ export default function HomePage() {
   const [profile, setProfile] = useState<DbProfile | null>(null);
   const [mode, setMode] = useState<"collective" | "mine">("collective");
   const [sel, setSel] = useState<number | null>(null);
-  // Two shapes for the same weave, side by side while we decide which one it is.
-  const [shape, setShape] = useState<"sphere" | "graph" | "knowledge">("sphere");
+  // The weave is the knowledge graph. The other two shapes stay reachable while
+  // developing so they can still be compared, but anywhere the app is actually
+  // deployed there is one weave and no switch.
+  const [shape, setShape] = useState<"sphere" | "graph" | "knowledge">("knowledge");
 
   useEffect(() => {
     let alive = true;
@@ -168,8 +173,8 @@ export default function HomePage() {
             )}
           </div>
 
-          {/* Shape switch — temporary, while we choose between the two */}
-          {!loading && !isEmpty && (
+          {/* Shape switch — a development affordance for comparing the three */}
+          {SHOW_SHAPE_PICKER && !loading && !isEmpty && (
             <div style={{ position: "absolute", top: 6, insetInlineEnd: 2, display: "flex", gap: 4, padding: 3, borderRadius: 999, background: "rgba(28,26,52,0.72)", border: `1px solid ${p.cardBorder}`, backdropFilter: "blur(8px)", zIndex: 2 }}>
               {([["sphere", t("mind.shapeSphere")], ["graph", t("mind.shapeGraph")], ["knowledge", t("mind.shapeKnowledge")]] as const).map(([k, label]) => (
                 <button
