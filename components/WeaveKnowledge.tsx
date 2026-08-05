@@ -37,6 +37,15 @@ function lcg(seed: number) {
   };
 }
 
+/**
+ * One definition of how big a memory draws, so labels and taps never drift off it.
+ * Deliberately modest, and falling away faster with depth, so the near face reads
+ * clearly instead of the whole field crowding forward.
+ */
+function radiusOf(w: number, s: number, near: number) {
+  return (1.9 + w * 6.5) * s * (0.48 + near * 0.68);
+}
+
 /** Two lobes with a hollow midline. A ball would read as a planet, not a mind. */
 function inLobe(x: number, y: number, z: number) {
   const fold = Math.abs(x) - 0.13;
@@ -226,7 +235,7 @@ export default function WeaveKnowledge({
         const vis = n.dim * Math.max(own, n.glow);
         if (vis < 0.02) continue;
         const glowK = 1 + n.glow * 0.7;
-        const r = (2.2 + n.w * 7.4) * p.s * (0.62 + p.near * 0.62) * (1 + n.glow * 0.5);
+        const r = radiusOf(n.w, p.s, p.near) * (1 + n.glow * 0.5);
         const a = Math.min(1, vis * (0.30 + p.near * 0.62) * (focus === null ? 1 : lit.has(n.i) ? 1 : 0.62));
         const c = n.color;
 
@@ -253,23 +262,19 @@ export default function WeaveKnowledge({
       ctx.textAlign = "center";
       ctx.shadowColor = "rgba(8,6,22,0.95)";
       ctx.shadowBlur = 9;
-      for (const p of proj) {
-        const n = p.n;
-        if (!n.mine || !n.label) continue;
-        const isFocus = focus === n.i;
-        const isNeighbour = focus !== null && lit.has(n.i);
-        const big = n.w > 0.42;
-        if (!isFocus && !isNeighbour && !(focus === null && big && p.near > 0.34)) continue;
-        const fs = (isFocus ? 17 : isNeighbour ? 12.5 : 14.5) * (0.86 + p.near * 0.3);
-        ctx.font = `${isFocus ? 700 : isNeighbour ? 400 : 600} ${fs}px Heebo, system-ui, sans-serif`;
-        ctx.direction = "rtl";
-        ctx.fillStyle = isFocus
-          ? "rgba(255,255,255,0.98)"
-          : isNeighbour
-            ? "rgba(255,255,255,0.72)"
-            : `rgba(255,255,255,${Math.min(0.5, 0.16 + p.near * 0.4)})`;
-        const r = (2.2 + n.w * 7.4) * p.s * (0.62 + p.near * 0.62);
-        ctx.fillText(n.label, p.sx, p.sy + r + fs * 0.92);
+      // Names appear only where the finger is. Left on, they turn the weave into
+      // a list; asked for, they answer.
+      if (focus !== null) {
+        for (const p of proj) {
+          const n = p.n;
+          if (!n.mine || !n.label || !lit.has(n.i)) continue;
+          const isFocus = focus === n.i;
+          const fs = (isFocus ? 17 : 12.5) * (0.86 + p.near * 0.3);
+          ctx.font = `${isFocus ? 700 : 400} ${fs}px Heebo, system-ui, sans-serif`;
+          ctx.direction = "rtl";
+          ctx.fillStyle = isFocus ? "rgba(255,255,255,0.98)" : "rgba(255,255,255,0.72)";
+          ctx.fillText(n.label, p.sx, p.sy + radiusOf(n.w, p.s, p.near) + fs * 0.92);
+        }
       }
       ctx.shadowBlur = 0;
 
@@ -290,31 +295,60 @@ export default function WeaveKnowledge({
       let best: number | null = null, bd = 26;
       for (const p of hit.current) {
         if (p.n.dim < 0.2) continue;
-        const r = (2.2 + p.n.w * 7.4) * p.s * (0.62 + p.near * 0.62);
+        const r = radiusOf(p.n.w, p.s, p.near);
         const d = Math.hypot(p.sx - mx, p.sy - my);
         if (d < Math.max(12, r * 2.4) && d < bd) { bd = d; best = p.n.i; }
       }
       return best;
     };
+    // Zoom is pinch and wheel only; two fingers say it better than a button.
+    const active = new Map<number, { x: number; y: number }>();
+    let pinch = 0, zAtPinch = 1;
+    const clampZ = (v: number) => Math.max(0.55, Math.min(3, v));
+
+    const down = (e: PointerEvent) => {
+      active.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+      if (active.size === 2) {
+        const [a, b] = [...active.values()];
+        pinch = Math.hypot(a.x - b.x, a.y - b.y);
+        zAtPinch = zoom.current;
+      }
+    };
     const move = (e: PointerEvent) => {
+      if (active.has(e.pointerId)) active.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+      if (active.size === 2) {
+        const [a, b] = [...active.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinch > 0) zoom.current = clampZ((zAtPinch * d) / pinch);
+        return;
+      }
       const id = pick(e.offsetX, e.offsetY);
       hoverRef.current = id;
       canvas.style.cursor = id === null ? "default" : "pointer";
     };
     const leave = () => { hoverRef.current = null; };
-    const click = (e: PointerEvent) => onSelect?.(pick(e.offsetX, e.offsetY));
+    const up = (e: PointerEvent) => {
+      const wasPinching = active.size === 2;
+      active.delete(e.pointerId);
+      pinch = 0;
+      if (!wasPinching) onSelect?.(pick(e.offsetX, e.offsetY));
+    };
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
-      zoom.current = Math.max(0.55, Math.min(3, zoom.current * (e.deltaY < 0 ? 1.12 : 0.89)));
+      zoom.current = clampZ(zoom.current * (e.deltaY < 0 ? 1.12 : 0.89));
     };
+    canvas.addEventListener("pointerdown", down);
     canvas.addEventListener("pointermove", move);
     canvas.addEventListener("pointerleave", leave);
-    canvas.addEventListener("pointerup", click);
+    canvas.addEventListener("pointerup", up);
+    canvas.addEventListener("pointercancel", up);
     canvas.addEventListener("wheel", wheel, { passive: false });
     return () => {
+      canvas.removeEventListener("pointerdown", down);
       canvas.removeEventListener("pointermove", move);
       canvas.removeEventListener("pointerleave", leave);
-      canvas.removeEventListener("pointerup", click);
+      canvas.removeEventListener("pointerup", up);
+      canvas.removeEventListener("pointercancel", up);
       canvas.removeEventListener("wheel", wheel);
     };
   }, [onSelect]);

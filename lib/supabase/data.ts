@@ -297,7 +297,7 @@ export async function listReactions(entryId: string): Promise<Reaction[]> {
 
 /** Respond to a shared memory. Sending 'love' twice takes it back. */
 export async function react(entryId: string, kind: ReactionKind, body = ""): Promise<void> {
-  if (demoEnabled()) return;
+  if (demoEnabled()) { demoReact(entryId, kind, body); return; }
   const supabase = createClient();
   const { error } = await supabase.rpc("react", { p_entry: entryId, p_kind: kind, p_body: body });
   if (error) throw error;
@@ -383,18 +383,40 @@ function demoPersonalEntries(): DbEntry[] {
   }));
 }
 
+/**
+ * Preview reactions live in memory for the session, so hearting and commenting
+ * actually behave in a demo instead of silently doing nothing.
+ */
+const demoStore = new Map<string, Reaction[]>();
+
 function demoReactions(entryId: string): Reaction[] {
-  const kinds: ReactionKind[] = ["love", "comment", "reflection", "sync"];
-  const n = (entryId.charCodeAt(entryId.length - 1) % 3) + 1;
+  const existing = demoStore.get(entryId);
+  if (existing) return existing;
   const bodies = ["גם אני חלמתי משהו דומה בדיוק באותו שבוע.", "זה נגע בי. תודה ששיתפת.", "הסמל הזה חוזר גם אצלי."];
-  return Array.from({ length: n }, (_, i) => ({
+  const n = (entryId.charCodeAt(entryId.length - 1) % 3) + 1;
+  const seeded: Reaction[] = Array.from({ length: n }, (_, i) => ({
     id: `demo-r-${entryId}-${i}`,
-    kind: kinds[(i + entryId.length) % kinds.length],
+    // Every comment carries words; a comment with nothing in it says nothing.
+    kind: i === 0 ? "love" : "comment",
     body: i === 0 ? "" : bodies[i % bodies.length],
     created_at: demoDateISO(i),
     author_name: DEMO_AUTHORS[i % DEMO_AUTHORS.length] ?? "מיכל",
     mine: false,
   }));
+  demoStore.set(entryId, seeded);
+  return seeded;
+}
+
+function demoReact(entryId: string, kind: ReactionKind, body: string) {
+  const rows = demoReactions(entryId).slice();
+  if (kind === "love") {
+    const at = rows.findIndex((r) => r.kind === "love" && r.mine);
+    if (at >= 0) rows.splice(at, 1);
+    else rows.push({ id: `demo-mine-${Date.now()}`, kind: "love", body: "", created_at: new Date().toISOString(), author_name: "אורח/ת", mine: true });
+  } else {
+    rows.push({ id: `demo-mine-${Date.now()}`, kind, body, created_at: new Date().toISOString(), author_name: "אורח/ת", mine: true });
+  }
+  demoStore.set(entryId, rows);
 }
 
 function demoCounts(): Map<string, ReactionCounts> {
@@ -414,7 +436,7 @@ function demoCounts(): Map<string, ReactionCounts> {
 
 function demoInbox(): InboxItem[] {
   const mine = demoPersonalEntries().filter((e) => e.visibility === "public");
-  const kinds: ReactionKind[] = ["sync", "reflection", "comment", "love"];
+  const kinds: ReactionKind[] = ["love", "comment"];
   const bodies = ["גם אני חלמתי משהו דומה.", "זה נגע בי מאוד.", "הסמל הזה חוזר גם אצלי.", ""];
   return mine.flatMap((e, i) =>
     kinds.slice(0, (i % 3) + 2).map((kind, k) => ({

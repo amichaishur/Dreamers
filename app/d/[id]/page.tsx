@@ -115,7 +115,7 @@ export default function SharedDreamPage() {
 
         {/* How the community answers this memory */}
         <div style={{ marginTop: 2, padding: "14px 15px", borderRadius: 16, background: p.cardBg, border: `1px solid ${p.cardBorder}` }}>
-          <Reactions entryId={e.id} />
+          <Reactions entryId={e.id} accent={d.color} />
         </div>
 
         <Link href="/community" style={{ marginTop: 6, height: 52, borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 9, textDecoration: "none", background: `linear-gradient(135deg, ${p.fabFrom}, ${p.fabTo})`, boxShadow: `0 12px 30px ${p.fabFrom}66` }}>

@@ -199,15 +199,15 @@ export default function WeaveGraph({
         ctx.beginPath(); ctx.arc(p.sx, p.sy, Math.max(0.4, tr), 0, Math.PI * 2); ctx.fill();
       }
 
-      // Titles last, in normal blending so they stay legible over the glow.
+      // Titles last, in normal blending so they stay legible over the glow, and
+      // only where the finger is. Left on, they turn the weave into a list.
       ctx.globalCompositeOperation = "source-over";
-      if (showLabels || sel !== null) {
+      if (sel !== null) {
         for (const i of order) {
           const p = proj[i], it = items[i];
           if (!it.mine) continue;                       // never label someone else's memory
           const isSel = sel === i;
-          const show = isSel || (showLabels && (z > 1.15 || degree[i] >= Math.max(3, maxDeg * 0.6)));
-          if (!show || p.bri < 0.5) continue;
+          if (!isSel && !neighbours.get(sel)?.has(i)) continue;
           const size = (4 + 0.94 * 0.94 * 11) * z * p.weight;
           const fs = Math.min(14, 10.5 * Math.max(1, z * 0.85));
           ctx.font = `600 ${fs}px Heebo, system-ui, sans-serif`;

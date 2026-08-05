@@ -36,7 +36,10 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="he" dir="rtl" className={heebo.variable}>
-      <body style={{ background: OUTER_BG }}>
+      {/* Extensions like Grammarly stamp attributes onto <body> before React
+          hydrates, which React then reports as a mismatch. Nothing we render
+          differs between server and client here, so the warning is noise. */}
+      <body style={{ background: OUTER_BG }} suppressHydrationWarning>
         <LangProvider>
           <div
             style={{

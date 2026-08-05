@@ -26,7 +26,6 @@ export default function HomePage() {
   const [profile, setProfile] = useState<DbProfile | null>(null);
   const [mode, setMode] = useState<"collective" | "mine">("collective");
   const [sel, setSel] = useState<number | null>(null);
-  const [zoomReq, setZoomReq] = useState(0);
   // Two shapes for the same weave, side by side while we decide which one it is.
   const [shape, setShape] = useState<"sphere" | "graph" | "knowledge">("sphere");
 
@@ -145,7 +144,6 @@ export default function HomePage() {
                 dimOthers={mineMode}
                 frozen={isEmpty}
                 interactive
-                zoomRequest={zoomReq}
               />
             ) : shape === "graph" ? (
               <WeaveGraph
@@ -157,7 +155,6 @@ export default function HomePage() {
                 showLabels={mineMode}
                 selected={sel}
                 onSelect={setSel}
-                zoomRequest={zoomReq}
               />
             ) : (
               <WeaveKnowledge
@@ -167,26 +164,9 @@ export default function HomePage() {
                 dimOthers={mineMode}
                 selected={sel}
                 onSelect={setSel}
-                zoomRequest={zoomReq}
               />
             )}
           </div>
-
-          {/* Zoom controls */}
-          {!loading && !isEmpty && (
-            <div style={{ position: "absolute", top: 6, insetInlineStart: 2, display: "flex", flexDirection: "column", gap: 6, zIndex: 2 }}>
-              {[["+", 1], ["−", -1]].map(([label, dir]) => (
-                <button
-                  key={label as string}
-                  onClick={() => setZoomReq((v) => v + (dir as number))}
-                  aria-label={dir === 1 ? t("mind.zoomIn") : t("mind.zoomOut")}
-                  style={{ width: 30, height: 30, borderRadius: 10, background: "rgba(28,26,52,0.72)", border: `1px solid ${p.cardBorder}`, color: p.text, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, backdropFilter: "blur(8px)" }}
-                >
-                  {label as string}
-                </button>
-              ))}
-            </div>
-          )}
 
           {/* Shape switch — temporary, while we choose between the two */}
           {!loading && !isEmpty && (

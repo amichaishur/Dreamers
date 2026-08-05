@@ -129,7 +129,7 @@ function LucidityChart({ points, lang, t, titleKey = "db.lucMeter", subKey = "db
 function Mailbox({ items, onOpen, t, lang }: { items: InboxItem[]; onOpen: () => void; t: (k: string) => string; lang: string }) {
   const [open, setOpen] = useState(false);
   const unread = items.filter((i) => i.unread).length;
-  const kinds: ReactionKind[] = ["sync", "reflection", "comment", "love"];
+  const kinds: ReactionKind[] = ["love", "comment"];
   const tally = (k: ReactionKind) => items.filter((i) => i.kind === k).length;
 
   const toggle = () => {
