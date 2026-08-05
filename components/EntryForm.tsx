@@ -109,6 +109,10 @@ export default function EntryForm({
       ? t(`kind.${kind}.ask`)
       : orDefault(`ef.detailPh.${diaryKey}`, "ef.detailPh");
 
+  // Roughly 34 characters fit on a line at this width; give the box a line for
+  // each one the prompt needs, so it never arrives with a scrollbar.
+  const detailHeight = Math.max(70, 32 + Math.ceil(detailPlaceholder.length / 30) * 22);
+
   const showExisting = !!existingMediaName && !removeExisting && !file;
   const attachLabel = file ? file.name : showExisting ? existingMediaName! : t("ef.attachFile");
 
@@ -182,7 +186,9 @@ export default function EntryForm({
               value={body}
               onChange={(e) => setBody(e.target.value)}
               placeholder={detailPlaceholder}
-              style={{ ...field, height: 70, fontSize: 14, lineHeight: 1.5, resize: "none" }}
+              // Tall enough to hold its own prompt. A question the reader has to
+              // scroll to finish reading is a question they will not answer.
+              style={{ ...field, height: detailHeight, fontSize: 14, lineHeight: 1.5, resize: "none" }}
             />
           </div>
 
