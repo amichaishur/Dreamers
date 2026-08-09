@@ -71,7 +71,14 @@ export default function WeaveKnowledge({
   dots, items, edges, dimOthers = false, selected = null, onSelect, zoomRequest = 0,
 }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const zoom = useRef(1);
+  // Opens close enough to read the structure. The weave runs past the edges at
+  // this distance, which is what dragging is for.
+  const zoom = useRef(1.5);
+  // How far the weave has been dragged from centre, in screen pixels.
+  const pan = useRef({ x: 0, y: 0 });
+  // True only while a finger is actually moving the weave, which is when the
+  // frame limiter steps aside so the drag tracks the finger.
+  const dragging = useRef(false);
   const selRef = useRef<number | null>(selected);
   selRef.current = selected;
   const hoverRef = useRef<number | null>(null);
@@ -152,12 +159,16 @@ export default function WeaveKnowledge({
     const frame = (now: number) => {
       if (stopped) return;
       raf = requestAnimationFrame(frame);
-      if (now - last < 33) return;   // ~30fps is plenty and leaves the phone alone
+      // ~30fps is plenty when it is drifting on its own, but a drag has to keep
+      // up with the finger or it reads as broken.
+      if (!dragging.current && now - last < 33) return;
       last = now;
 
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      // Phones report 3x and up; honouring it is what keeps the small dots from
+      // going soft once you have zoomed in on them.
+      const dpr = Math.min(window.devicePixelRatio || 1, 3);
       const W = canvas.clientWidth, H = canvas.clientHeight;
       if (!W || !H) return;
       if (canvas.width !== Math.round(W * dpr)) {
@@ -176,7 +187,7 @@ export default function WeaveKnowledge({
         (adjacency.get(focus) ?? new Set()).forEach((w) => lit.add(w));
       }
 
-      const cx = W / 2, cy = H / 2;
+      const cx = W / 2 + pan.current.x, cy = H / 2 + pan.current.y;
       const R = Math.min(W, H) * 0.44 * zoom.current;
       const yaw = t * 0.075;
       const tilt = 0.30 + Math.sin(t * 0.06) * 0.05;
@@ -301,37 +312,68 @@ export default function WeaveKnowledge({
       }
       return best;
     };
-    // Zoom is pinch and wheel only; two fingers say it better than a button.
+    // Zoom is pinch and wheel; one finger drags the weave around.
     const active = new Map<number, { x: number; y: number }>();
     let pinch = 0, zAtPinch = 1;
+    // How far this press has travelled. Under the threshold it was a tap on a
+    // memory; over it, the person was moving the weave and means no selection.
+    let travelled = 0;
+    const TAP_SLOP = 6;
     const clampZ = (v: number) => Math.max(0.55, Math.min(3, v));
 
     const down = (e: PointerEvent) => {
       active.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+      travelled = 0;
       if (active.size === 2) {
         const [a, b] = [...active.values()];
         pinch = Math.hypot(a.x - b.x, a.y - b.y);
         zAtPinch = zoom.current;
+      } else {
+        // Capture keeps the drag alive if the finger leaves the canvas. Not every
+        // pointer can be captured, and failing to is not a reason to stop.
+        try { canvas.setPointerCapture(e.pointerId); } catch { /* drag still works */ }
       }
     };
     const move = (e: PointerEvent) => {
-      if (active.has(e.pointerId)) active.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+      const prev = active.get(e.pointerId);
+      if (prev) active.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
       if (active.size === 2) {
         const [a, b] = [...active.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y);
         if (pinch > 0) zoom.current = clampZ((zAtPinch * d) / pinch);
         return;
       }
+      // A held finger moves the weave; a hovering mouse just lights things up.
+      if (prev) {
+        const dx = e.offsetX - prev.x, dy = e.offsetY - prev.y;
+        travelled += Math.hypot(dx, dy);
+        if (travelled > TAP_SLOP) {
+          dragging.current = true;
+          // Bounded, so the weave can never be flung somewhere you can't find it.
+          const mx = canvas.clientWidth * 0.75, my = canvas.clientHeight * 0.75;
+          pan.current = {
+            x: Math.max(-mx, Math.min(mx, pan.current.x + dx)),
+            y: Math.max(-my, Math.min(my, pan.current.y + dy)),
+          };
+          hoverRef.current = null;
+          canvas.style.cursor = "grabbing";
+        }
+        return;
+      }
       const id = pick(e.offsetX, e.offsetY);
       hoverRef.current = id;
-      canvas.style.cursor = id === null ? "default" : "pointer";
+      canvas.style.cursor = id === null ? "grab" : "pointer";
     };
     const leave = () => { hoverRef.current = null; };
     const up = (e: PointerEvent) => {
       const wasPinching = active.size === 2;
+      const wasDragging = dragging.current;
       active.delete(e.pointerId);
+      try { if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId); } catch { /* nothing held */ }
       pinch = 0;
-      if (!wasPinching) onSelect?.(pick(e.offsetX, e.offsetY));
+      dragging.current = false;
+      canvas.style.cursor = "grab";
+      if (!wasPinching && !wasDragging) onSelect?.(pick(e.offsetX, e.offsetY));
     };
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -362,7 +404,7 @@ export default function WeaveKnowledge({
     zoom.current = Math.max(0.55, Math.min(3, zoom.current * Math.pow(step, Math.abs(delta))));
   }, [zoomRequest]);
 
-  return <canvas ref={ref} style={{ position: "relative", width: "100%", height: "100%", display: "block", touchAction: "none" }} />;
+  return <canvas ref={ref} style={{ position: "relative", width: "100%", height: "100%", display: "block", touchAction: "none", cursor: "grab" }} />;
 }
 
 function rgbOf(hexStr: string) {

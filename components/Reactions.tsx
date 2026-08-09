@@ -26,10 +26,16 @@ export function ReactionIcon({ kind, size = 15, color, filled = false }: { kind:
   return <svg {...common} fill="none"><path d="M4 9a8 8 0 0 1 13.6-4.6L20 7" /><path d="M20 4v3h-3" /><path d="M20 15a8 8 0 0 1-13.6 4.6L4 17" /><path d="M4 20v-3h3" /></svg>;
 }
 
+/** The three ways of answering in words. A heart is the fourth, and wordless. */
+const TEXT_KINDS = ["comment", "sync", "reflection"] as const;
+type TextKind = (typeof TEXT_KINDS)[number];
+
 /**
- * How a shared memory is answered: a heart, or words underneath it. Nothing more
- * complicated than that, and the box to write in is always open, so replying
- * takes one tap rather than two.
+ * How a shared memory is answered: a heart, or words underneath it. The words
+ * come in three flavours — a plain response, a sync, a reflection — which behave
+ * identically and differ only in colour and icon, so the thread stays one
+ * conversation rather than three. The box to write in is always open, so
+ * replying takes one tap rather than two.
  */
 export default function Reactions({ entryId, accent, onChanged }: { entryId: string; accent?: string; onChanged?: () => void }) {
   const { t, lang } = useLang();
@@ -38,6 +44,7 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
   const heartColor = accent ?? REACTION_COLOR.love;
   const [rows, setRows] = useState<Reaction[] | null>(null);
   const [draft, setDraft] = useState("");
+  const [kind, setKind] = useState<TextKind>("comment");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -46,7 +53,10 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
 
   const loved = (rows ?? []).some((r) => r.kind === "love" && r.mine);
   const loves = (rows ?? []).filter((r) => r.kind === "love").length;
-  const comments = (rows ?? []).filter((r) => r.kind === "comment");
+  // One thread, oldest first, whichever way each person chose to answer.
+  const said = (rows ?? [])
+    .filter((r): r is Reaction & { kind: TextKind } => (TEXT_KINDS as readonly string[]).includes(r.kind))
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
 
   const send = async (kind: ReactionKind, body = "") => {
     if (busy) return;
@@ -87,18 +97,25 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
             <span style={{ fontSize: 13.5, fontWeight: 700, color: loved ? heartColor : p.subtext, fontVariantNumeric: "tabular-nums" }}>{loves}</span>
           )}
         </button>
-        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-          <ReactionIcon kind="comment" size={22} color={p.subtext} />
-          {comments.length > 0 && (
-            <span style={{ fontSize: 13.5, fontWeight: 700, color: p.subtext, fontVariantNumeric: "tabular-nums" }}>{comments.length}</span>
-          )}
-        </div>
+        {TEXT_KINDS.map((k) => {
+          const n = said.filter((r) => r.kind === k).length;
+          // A kind with nothing said in it stays grey and countless, so the row
+          // reads as three affordances rather than three empty scores.
+          return (
+            <div key={k} style={{ display: "flex", alignItems: "center", gap: 7 }} title={t(`rx.${k}`)}>
+              <ReactionIcon kind={k} size={22} color={n > 0 ? REACTION_COLOR[k] : p.subtext} />
+              {n > 0 && (
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: REACTION_COLOR[k], fontVariantNumeric: "tabular-nums" }}>{n}</span>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* What people said */}
-      {comments.length > 0 && (
+      {said.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-          {comments.map((r) => (
+          {said.map((r) => (
             <div key={r.id} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
               <div style={{ width: 28, height: 28, borderRadius: "50%", flex: "0 0 auto", background: "linear-gradient(135deg,#6E8BFF,#9A6CFF)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff" }}>
                 {initialsFrom(r.author_name, r.author_name ?? "?")}
@@ -106,8 +123,14 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
               <div style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: p.text }}>{r.author_name ?? t("rx.someone")}</span>
                 <span style={{ fontSize: 13, color: p.text, opacity: 0.86 }}> {r.body}</span>
-                <div style={{ fontSize: 10.5, color: p.subtext, marginTop: 3 }}>
-                  {new Date(r.created_at).toLocaleDateString(lang === "en" ? "en-US" : "he-IL", { day: "numeric", month: "short" })}
+                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3 }}>
+                  {/* Which kind of answer this was, said quietly rather than as a badge */}
+                  <ReactionIcon kind={r.kind} size={11} color={REACTION_COLOR[r.kind]} />
+                  <span style={{ fontSize: 10.5, color: REACTION_COLOR[r.kind], fontWeight: 600 }}>{t(`rx.${r.kind}`)}</span>
+                  <span style={{ fontSize: 10.5, color: p.subtext }}>·</span>
+                  <span style={{ fontSize: 10.5, color: p.subtext }}>
+                    {new Date(r.created_at).toLocaleDateString(lang === "en" ? "en-US" : "he-IL", { day: "numeric", month: "short" })}
+                  </span>
                 </div>
               </div>
             </div>
@@ -116,23 +139,50 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
       )}
 
       {/* Always open, so replying is one tap */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && draft.trim()) send("comment", draft.trim()); }}
-          placeholder={t("rx.addComment")}
-          style={{ flex: 1, minWidth: 0, height: 42, padding: "0 14px", borderRadius: 999, background: p.cardBg, border: `1px solid ${p.cardBorder}`, color: p.text, fontSize: 13.5, font: "inherit", outline: "none" }}
-        />
-        {draft.trim() && (
-          <button
-            onClick={() => send("comment", draft.trim())}
-            disabled={busy}
-            style={{ flex: "0 0 auto", padding: "0 16px", height: 42, borderRadius: 999, border: "none", cursor: "pointer", background: `linear-gradient(135deg, ${p.fabFrom}, ${p.fabTo})`, color: "#fff", fontSize: 13.5, fontWeight: 700, font: "inherit" }}
-          >
-            {busy ? t("rx.sending") : t("rx.send")}
-          </button>
-        )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {/* Which kind of answer this is. Picking one only changes its colour and
+            what the box asks you — the reply itself works the same either way. */}
+        <div style={{ display: "flex", gap: 7 }}>
+          {TEXT_KINDS.map((k) => {
+            const on = kind === k;
+            const c = REACTION_COLOR[k];
+            return (
+              <button
+                key={k}
+                onClick={() => setKind(k)}
+                aria-pressed={on}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999,
+                  cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 700,
+                  background: on ? `${c}26` : "transparent",
+                  border: `1px solid ${on ? c : p.cardBorder}`,
+                  color: on ? c : p.subtext,
+                }}
+              >
+                <ReactionIcon kind={k} size={13} color={on ? c : p.subtext} />
+                {t(`rx.${k}`)}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && draft.trim()) send(kind, draft.trim()); }}
+            placeholder={t(`rx.${kind}.ask`)}
+            style={{ flex: 1, minWidth: 0, height: 42, padding: "0 14px", borderRadius: 999, background: p.cardBg, border: `1px solid ${p.cardBorder}`, color: p.text, fontSize: 13.5, font: "inherit", outline: "none" }}
+          />
+          {draft.trim() && (
+            <button
+              onClick={() => send(kind, draft.trim())}
+              disabled={busy}
+              style={{ flex: "0 0 auto", padding: "0 16px", height: 42, borderRadius: 999, border: "none", cursor: "pointer", background: REACTION_COLOR[kind], color: "#15112B", fontSize: 13.5, fontWeight: 700, font: "inherit" }}
+            >
+              {busy ? t("rx.sending") : t("rx.send")}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

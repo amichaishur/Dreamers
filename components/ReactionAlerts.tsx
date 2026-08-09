@@ -88,7 +88,12 @@ export default function ReactionAlerts() {
 
   const color = p.dots[item.entry_type as DiaryType] ?? p.fabTo;
   const s = diaryStyle(color);
-  const what = item.kind === "love" ? t("rx.alertLoved") : t("rx.alertCommented");
+  const what = t(
+    item.kind === "love" ? "rx.alertLoved"
+      : item.kind === "sync" ? "rx.alertSynced"
+      : item.kind === "reflection" ? "rx.alertReflected"
+      : "rx.alertCommented",
+  );
 
   return (
     <div

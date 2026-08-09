@@ -129,7 +129,7 @@ function LucidityChart({ points, lang, t, titleKey = "db.lucMeter", subKey = "db
 function Mailbox({ items, onOpen, t, lang }: { items: InboxItem[]; onOpen: () => void; t: (k: string) => string; lang: string }) {
   const [open, setOpen] = useState(false);
   const unread = items.filter((i) => i.unread).length;
-  const kinds: ReactionKind[] = ["love", "comment"];
+  const kinds: ReactionKind[] = ["love", "comment", "sync", "reflection"];
   const tally = (k: ReactionKind) => items.filter((i) => i.kind === k).length;
 
   const toggle = () => {
@@ -242,6 +242,7 @@ export default function DashboardPage() {
 
   const DREAM = "#B79CEB";
   const maxHist = Math.max(1, ...stats.lucidityHist);
+  const maxAware = Math.max(1, ...stats.awarenessHist);
   const hasLucid = stats.lucidityCount > 0;
   const wdLabels = lang === "en" ? ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] : ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
   const maxWd = Math.max(1, ...stats.dreamsByWeekday);
@@ -360,6 +361,29 @@ export default function DashboardPage() {
                   <div key={level} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, height: "100%", justifyContent: "flex-end" }}>
                     <div style={{ fontSize: 9.5, fontWeight: 700, color: c ? "#C9B6F2" : "rgba(236,231,250,0.3)", fontVariantNumeric: "tabular-nums" }}>{c || ""}</div>
                     <div style={{ width: "100%", maxWidth: 18, height: `${(4 + (c / maxHist) * 62).toFixed(0)}px`, borderRadius: 5, background: col, boxShadow: c ? `0 0 8px ${col}` : "none", transformOrigin: "bottom", animation: `growY 0.7s cubic-bezier(.2,.8,.2,1) ${(0.03 * level).toFixed(2)}s both` }} />
+                    <div style={{ fontSize: 9.5, fontWeight: 600, color: "rgba(236,231,250,0.5)" }}>{level}</div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ textAlign: "center", color: "rgba(236,231,250,0.45)", fontSize: 12.5, padding: "28px 0" }}>{t("db.dreamEmpty")}</div>
+          )}
+        </div>
+
+        {/* Awareness distribution — the same shape as lucidity, in the blue that
+            marks awareness everywhere else, so the pair reads as one comparison */}
+        <div style={{ ...card, padding: "15px 18px 14px" }}>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>{t("db.awareDist")}</div>
+          <div style={{ fontSize: 11, color: "rgba(236,231,250,0.5)", marginTop: 2, marginBottom: 14 }}>{t("db.awareDistSub")}</div>
+          {stats.awarenessCount > 0 ? (
+            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 4, height: 96 }}>
+              {stats.awarenessHist.map((c, level) => {
+                const col = `rgba(127,178,240,${(0.32 + 0.68 * (level / 10)).toFixed(2)})`;
+                return (
+                  <div key={level} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, height: "100%", justifyContent: "flex-end" }}>
+                    <div style={{ fontSize: 9.5, fontWeight: 700, color: c ? "#9EC6F5" : "rgba(236,231,250,0.3)", fontVariantNumeric: "tabular-nums" }}>{c || ""}</div>
+                    <div style={{ width: "100%", maxWidth: 18, height: `${(4 + (c / maxAware) * 62).toFixed(0)}px`, borderRadius: 5, background: col, boxShadow: c ? `0 0 8px ${col}` : "none", transformOrigin: "bottom", animation: `growY 0.7s cubic-bezier(.2,.8,.2,1) ${(0.03 * level).toFixed(2)}s both` }} />
                     <div style={{ fontSize: 9.5, fontWeight: 600, color: "rgba(236,231,250,0.5)" }}>{level}</div>
                   </div>
                 );

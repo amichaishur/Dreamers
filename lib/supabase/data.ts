@@ -397,13 +397,19 @@ const demoStore = new Map<string, Reaction[]>();
 function demoReactions(entryId: string): Reaction[] {
   const existing = demoStore.get(entryId);
   if (existing) return existing;
-  const bodies = ["גם אני חלמתי משהו דומה בדיוק באותו שבוע.", "זה נגע בי. תודה ששיתפת.", "הסמל הזה חוזר גם אצלי."];
-  const n = (entryId.charCodeAt(entryId.length - 1) % 3) + 1;
+  // A heart first, then words — and the words rotate through all three kinds so
+  // the preview shows what a real thread looks like.
+  const said = [
+    { kind: "comment" as const, body: "גם אני חלמתי משהו דומה בדיוק באותו שבוע." },
+    { kind: "sync" as const, body: "ראיתי את אותה הדמות למחרת ברכבת." },
+    { kind: "reflection" as const, body: "זה החזיר לי משהו שאני מתחמק/ת ממנו." },
+  ];
+  const n = (entryId.charCodeAt(entryId.length - 1) % 3) + 2;
   const seeded: Reaction[] = Array.from({ length: n }, (_, i) => ({
     id: `demo-r-${entryId}-${i}`,
-    // Every comment carries words; a comment with nothing in it says nothing.
-    kind: i === 0 ? "love" : "comment",
-    body: i === 0 ? "" : bodies[i % bodies.length],
+    // Every worded answer carries words; one with nothing in it says nothing.
+    kind: i === 0 ? "love" : said[(i - 1) % said.length].kind,
+    body: i === 0 ? "" : said[(i - 1) % said.length].body,
     created_at: demoDateISO(i),
     author_name: DEMO_AUTHORS[i % DEMO_AUTHORS.length] ?? "מיכל",
     mine: false,
@@ -460,8 +466,8 @@ function demoCounts(): Map<string, ReactionCounts> {
 
 function demoInbox(): InboxItem[] {
   const mine = demoPersonalEntries().filter((e) => e.visibility === "public");
-  const kinds: ReactionKind[] = ["love", "comment"];
-  const bodies = ["גם אני חלמתי משהו דומה.", "זה נגע בי מאוד.", "הסמל הזה חוזר גם אצלי.", ""];
+  const kinds: ReactionKind[] = ["love", "comment", "sync", "reflection"];
+  const bodies = ["גם אני חלמתי משהו דומה.", "זה נגע בי מאוד.", "הסמל הזה חוזר גם אצלי.", "ראיתי את אותו המספר באותו היום."];
   return mine.flatMap((e, i) =>
     kinds.slice(0, (i % 3) + 2).map((kind, k) => ({
       id: `demo-i-${i}-${k}`,

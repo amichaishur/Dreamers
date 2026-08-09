@@ -24,6 +24,7 @@ export type Stats = {
   awarenessAvg: number;
   awarenessCount: number;
   awarenessPoints: LucidityPoint[];
+  awarenessHist: number[];     // length 11, index = level 0..10 → count
 };
 
 export function computeStats(entries: DbEntry[]): Stats {
@@ -77,6 +78,8 @@ export function computeStats(entries: DbEntry[]): Stats {
   const awarenessCount = aware.length;
   const awarenessAvg = awarenessCount ? aware.reduce((s, x) => s + x.v, 0) / awarenessCount : 0;
   const awarenessPoints = aware;
+  const awarenessHist = new Array(11).fill(0);
+  aware.forEach((x) => { const b = Math.max(0, Math.min(10, Math.round(x.v))); awarenessHist[b]++; });
 
   const msDay = 86400000;
   const startToday = new Date();
@@ -94,6 +97,6 @@ export function computeStats(entries: DbEntry[]): Stats {
   return {
     total, streak, thisMonth, byType, lucidityAvg, lucidityCount, lucidityPoints, weekly,
     dreamCount, dreamMonth, lucidCount, maxLucidity, lucidityHist, dreamsByWeekday,
-    awarenessAvg, awarenessCount, awarenessPoints,
+    awarenessAvg, awarenessCount, awarenessPoints, awarenessHist,
   };
 }
