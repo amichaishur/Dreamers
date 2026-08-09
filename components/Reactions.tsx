@@ -8,11 +8,12 @@ import { initialsFrom } from "@/lib/format";
 
 const p = theme;
 
+/** Four answers, four colours, far enough apart to tell at a glance. */
 export const REACTION_COLOR: Record<ReactionKind, string> = {
   love: "#F08BA8",
   comment: "#9AB6FF",
   reflection: "#B79CEB",
-  sync: "#F2C879",
+  sync: "#F59A3C",
 };
 
 export function ReactionIcon({ kind, size = 15, color, filled = false }: { kind: ReactionKind; size?: number; color?: string; filled?: boolean }) {
@@ -99,11 +100,13 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
         </button>
         {TEXT_KINDS.map((k) => {
           const n = said.filter((r) => r.kind === k).length;
-          // A kind with nothing said in it stays grey and countless, so the row
-          // reads as three affordances rather than three empty scores.
+          // Lit when the kind holds something, and also while you are writing one
+          // — so choosing "sync" below turns the sync icon up here orange, and it
+          // is obvious which of the three you are about to send.
+          const lit = n > 0 || kind === k;
           return (
             <div key={k} style={{ display: "flex", alignItems: "center", gap: 7 }} title={t(`rx.${k}`)}>
-              <ReactionIcon kind={k} size={22} color={n > 0 ? REACTION_COLOR[k] : p.subtext} />
+              <ReactionIcon kind={k} size={22} color={lit ? REACTION_COLOR[k] : p.subtext} />
               {n > 0 && (
                 <span style={{ fontSize: 13.5, fontWeight: 700, color: REACTION_COLOR[k], fontVariantNumeric: "tabular-nums" }}>{n}</span>
               )}

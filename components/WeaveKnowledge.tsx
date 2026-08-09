@@ -74,10 +74,12 @@ export default function WeaveKnowledge({
   // Opens close enough to read the structure. The weave runs past the edges at
   // this distance, which is what dragging is for.
   const zoom = useRef(1.5);
-  // How far the weave has been dragged from centre, in screen pixels.
-  const pan = useRef({ x: 0, y: 0 });
-  // True only while a finger is actually moving the weave, which is when the
-  // frame limiter steps aside so the drag tracks the finger.
+  // Where dragging has turned the weave to, on top of its own slow drift.
+  // Sideways spins it; up and down tips it toward or away from you.
+  const spin = useRef(0);
+  const tiltOff = useRef(0);
+  // True only while a finger is actually turning the weave, which is when the
+  // frame limiter steps aside so the rotation tracks the finger.
   const dragging = useRef(false);
   const selRef = useRef<number | null>(selected);
   selRef.current = selected;
@@ -187,10 +189,10 @@ export default function WeaveKnowledge({
         (adjacency.get(focus) ?? new Set()).forEach((w) => lit.add(w));
       }
 
-      const cx = W / 2 + pan.current.x, cy = H / 2 + pan.current.y;
+      const cx = W / 2, cy = H / 2;
       const R = Math.min(W, H) * 0.44 * zoom.current;
-      const yaw = t * 0.075;
-      const tilt = 0.30 + Math.sin(t * 0.06) * 0.05;
+      const yaw = t * 0.075 + spin.current;
+      const tilt = 0.30 + Math.sin(t * 0.06) * 0.05 + tiltOff.current;
       const cyaw = Math.cos(yaw), syaw = Math.sin(yaw);
       const ctil = Math.cos(tilt), stil = Math.sin(tilt);
 
@@ -349,12 +351,10 @@ export default function WeaveKnowledge({
         travelled += Math.hypot(dx, dy);
         if (travelled > TAP_SLOP) {
           dragging.current = true;
-          // Bounded, so the weave can never be flung somewhere you can't find it.
-          const mx = canvas.clientWidth * 0.75, my = canvas.clientHeight * 0.75;
-          pan.current = {
-            x: Math.max(-mx, Math.min(mx, pan.current.x + dx)),
-            y: Math.max(-my, Math.min(my, pan.current.y + dy)),
-          };
+          // Sideways turns it all the way round; up and down stops short of the
+          // poles, where the whole field would flip over and read as a glitch.
+          spin.current += dx * 0.009;
+          tiltOff.current = Math.max(-1.15, Math.min(1.15, tiltOff.current + dy * 0.006));
           hoverRef.current = null;
           canvas.style.cursor = "grabbing";
         }

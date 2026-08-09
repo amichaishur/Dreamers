@@ -339,16 +339,6 @@ export default function DashboardPage() {
 
         <LucidityChart points={stats.lucidityPoints} lang={lang} t={t} />
 
-        {/* Awareness: how present you were inside the dream, lucid or not */}
-        <LucidityChart
-          points={stats.awarenessPoints}
-          lang={lang}
-          t={t}
-          titleKey="db.awarenessMeter"
-          subKey="db.awarenessSub"
-          lineColor="#7FB2F0"
-        />
-
         {/* Lucidity distribution */}
         <div style={{ ...card, padding: "15px 18px 14px" }}>
           <div style={{ fontSize: 15, fontWeight: 700 }}>{t("db.lucidDist")}</div>
@@ -371,8 +361,20 @@ export default function DashboardPage() {
           )}
         </div>
 
+        {/* Awareness: how present you were inside the dream, lucid or not. Each
+            measure keeps its own meter and distribution together, so the pair is
+            read side by side rather than hunted for. */}
+        <LucidityChart
+          points={stats.awarenessPoints}
+          lang={lang}
+          t={t}
+          titleKey="db.awarenessMeter"
+          subKey="db.awarenessSub"
+          lineColor="#7FB2F0"
+        />
+
         {/* Awareness distribution — the same shape as lucidity, in the blue that
-            marks awareness everywhere else, so the pair reads as one comparison */}
+            marks awareness everywhere else */}
         <div style={{ ...card, padding: "15px 18px 14px" }}>
           <div style={{ fontSize: 15, fontWeight: 700 }}>{t("db.awareDist")}</div>
           <div style={{ fontSize: 11, color: "rgba(236,231,250,0.5)", marginTop: 2, marginBottom: 14 }}>{t("db.awareDistSub")}</div>
