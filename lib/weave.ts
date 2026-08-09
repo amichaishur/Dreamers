@@ -26,6 +26,12 @@ const STOP = new Set([
   "של", "את", "על", "עם", "אני", "זה", "לא", "יש", "היה", "היו", "אבל", "כמו", "מה", "כל",
   "לי", "הוא", "היא", "אז", "גם", "רק", "עוד", "כי", "ואז", "הייתי", "בתוך", "שם", "אחרי",
   "לפני", "כאילו", "ממש", "מאוד", "אותי", "אותו", "אותה", "הזה", "הזאת", "היום", "אחד",
+  // Prepositions and filler. They survive tokenising and look rare in a small
+  // journal, which is exactly how "מעל" ends up presented as a shared symbol.
+  "מעל", "מתחת", "בין", "אל", "עד", "כבר", "שוב", "פעם", "בדיוק", "בלי", "אצל", "לתוך",
+  "מתוך", "כדי", "בגלל", "למרות", "אולי", "תמיד", "אף", "שום", "איזה", "כמה", "יותר",
+  "פחות", "עדיין", "כאן", "אותם", "אותן", "שלי", "שלו", "שלה", "שלהם", "להיות", "הייתה",
+  "היינו", "עצמי", "עצמו", "עצמה", "כל כך", "איך", "מתי", "למה", "כמובן", "בערך",
   "the", "and", "was", "with", "that", "this", "for", "from", "were", "had",
 ]);
 
@@ -109,8 +115,11 @@ const DAY = 86400000;
 const W_WORDS = 2.6;
 const W_PHRASE = 3.2;
 const W_CONCEPT = 2.8;
-const W_SAME_NIGHT = 1.5;
-const W_NEAR_DAYS = 0.9;
+// Deliberately below the threshold: closeness in time is a real signal but a
+// poor reason on its own. Two memories from one night link only once something
+// else — a word, a symbol, the same journal — agrees with the timing.
+const W_SAME_NIGHT = 1.2;
+const W_NEAR_DAYS = 0.7;
 const W_RECUR_DATE = 0.45;
 const W_SAME_TYPE = 0.5;
 const W_LUCIDITY = 0.5;
@@ -152,6 +161,14 @@ export function computeEdges(items: WeaveItem[]): WeaveEdge[] {
     fs.forEach((f) => dfFam.set(f, (dfFam.get(f) ?? 0) + 1));
   });
 
+  // How common a word or phrase may be and still count as evidence. Scaled to
+  // the journal but hard-capped, so a large journal never quietly starts
+  // treating everyday words as meaningful.
+  const RARE_MAX = Math.max(2, Math.min(12, Math.ceil(items.length * 0.12)));
+  // Symbol families are broader by nature — many dreams touch water — so they
+  // get a looser ceiling, and the square-root damping below does the rest.
+  const FAMILY_MAX = Math.max(3, Math.round(items.length * 0.35));
+
   const times = items.map((it) => new Date(it.createdAt).getTime());
   const dates = items.map((it) => new Date(it.createdAt));
   const luc = items.map((it) => (it.lucidity == null || it.lucidity === "" ? NaN : Number(it.lucidity)));
@@ -169,10 +186,13 @@ export function computeEdges(items: WeaveItem[]): WeaveEdge[] {
       const reasons: string[] = [];
       let score = 0;
 
-      // 1. Shared rare words
+      // 1. Shared rare words. The ceiling is what makes this mean anything: a
+      // word has to be scarce to count at all. "סבתא" in two memories out of two
+      // hundred is a signal; "חלום", or a phrase every entry happens to carry,
+      // is not, and no amount of it should ever draw a line.
       const shared: string[] = [];
       for (const w of new Set(toks[j])) {
-        if (setI.has(w) && (df.get(w) ?? 0) <= Math.max(2, Math.round(items.length * 0.25))) shared.push(w);
+        if (setI.has(w) && (df.get(w) ?? 0) <= RARE_MAX) shared.push(w);
       }
       if (shared.length) {
         let s = 0;
@@ -187,7 +207,7 @@ export function computeEdges(items: WeaveItem[]): WeaveEdge[] {
       const gramsI = new Set(grams[i]);
       const sharedGrams: string[] = [];
       for (const g of new Set(grams[j])) {
-        if (gramsI.has(g)) sharedGrams.push(g);
+        if (gramsI.has(g) && (dfGram.get(g) ?? 0) <= RARE_MAX) sharedGrams.push(g);
       }
       if (sharedGrams.length) {
         let s = 0;
@@ -200,7 +220,9 @@ export function computeEdges(items: WeaveItem[]): WeaveEdge[] {
       // 1c. Shared symbol families — no common word needed; swimming a river and
       // waves on a beach both live in water. Rarity-weighted like everything else.
       const sharedFams: string[] = [];
-      fams[j].forEach((f) => { if (fams[i].has(f)) sharedFams.push(f); });
+      fams[j].forEach((f) => {
+        if (fams[i].has(f) && (dfFam.get(f) ?? 0) <= FAMILY_MAX) sharedFams.push(f);
+      });
       if (sharedFams.length) {
         let s = 0;
         // Square-root damping, gentler than the word rule: a symbol a handful of

@@ -363,6 +363,31 @@ export function demoEnabled(): boolean {
 
 // ---- Demo content for showcase / preview ----
 const DEMO_TITLES = ["טיסה מעל הים", "בית הילדות", "מבוך אינסופי", "שיחה עם סבתא", "נפילה איטית", "יער זוהר", "מרוץ בזמן", "דלת נסתרת", "ריקוד על המים", "עיר תת־ימית", "כנפיים חדשות", "גשר הכוכבים", "חדר ללא קירות", "אור בקצה", "מסע אל השחר"];
+
+/**
+ * Real texts, one per title, so the preview weave draws real relationships:
+ * the sea entries find each other through the water family, the doors and the
+ * maze through thresholds, the grandmother and the childhood house through
+ * family. Boilerplate repeated across every entry would teach the weave that
+ * "לדוגמה" is a meaningful symbol, which is exactly what it must not learn.
+ */
+const DEMO_BODIES = [
+  "ריחפתי נמוך מעל הים והמים היו שקטים לגמרי. הכנפיים לא היו שלי אבל ידעתי בדיוק איך להזיז אותן.",
+  "חזרתי לבית הילדות והמטבח היה בדיוק כפי שזכרתי. אמא עמדה שם בלי להסתובב אליי.",
+  "מבוך של מסדרונות בלי סוף. כל דלת שפתחתי הובילה לאותו חדר, ובכל פעם הרגשתי שאני קרוב יותר.",
+  "סבתא ישבה מולי ודיברה איטי מאוד. לא הצלחתי לשמוע את הקול שלה אבל הבנתי כל מילה.",
+  "נפלתי לאט מאוד, כמו נוצה. לא היה פחד, רק תחושה שהתהום מחכה בסבלנות.",
+  "היער היה מואר מבפנים. העצים זהרו בירוק והשורשים נשמו מתחת לרגליים שלי.",
+  "השעון רץ אחורה ואני איחרתי למשהו שכבר קרה. ניסיתי לרוץ ולא הצלחתי לזוז.",
+  "מאחורי הספרייה הייתה דלת שלא ראיתי קודם. המפתח כבר היה בכיס שלי.",
+  "רקדתי על פני המים בלי לשקוע. הגלים החזיקו אותי כאילו זה הדבר הכי טבעי.",
+  "עיר שלמה מתחת לים, עם רחובות ובניינים. שחיתי בין החלונות והכל היה שקט.",
+  "צמחו לי כנפיים חדשות והן היו כבדות מדי בהתחלה. אחר כך המראתי מעל העיר.",
+  "גשר עשוי מכוכבים נמתח בין שני הרים. הלכתי עליו והשמיים היו מתחתיי.",
+  "חדר בלי קירות, רק רצפה ותקרה. יכולתי לראות למרחק ולא היה לאן לצאת.",
+  "בקצה המסדרון הארוך הייתה נקודת אור אחת. ככל שהתקרבתי היא נשארה באותו מרחק.",
+  "יצאתי לדרך לפני הזריחה. השביל היה ארוך והשמש עלתה בדיוק כשהגעתי.",
+];
 const DEMO_AUTHORS = ["מיכל", "יונתן", "נועה", "דניאל", "תמר", "איתי", null, "שירה", null, "אורי"];
 
 function demoDateISO(daysAgo: number, hour = 3): string {
@@ -375,7 +400,7 @@ function demoPersonalEntries(): DbEntry[] {
     id: `demo-p-${i}`,
     type,
     title: DEMO_TITLES[i % DEMO_TITLES.length],
-    body: "רשומה לדוגמה במצב תצוגה.",
+    body: DEMO_BODIES[i % DEMO_BODIES.length],
     lucidity: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(5 + 3 * Math.sin(i * 1.1))))) : null,
     awareness: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(5 + 3 * Math.sin(i * 0.8 + 1))))) : null,
     kind: type === "reality" ? (["sync", "reality_check", "anomaly"] as const)[i % 3] : null,

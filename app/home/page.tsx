@@ -188,6 +188,26 @@ export default function HomePage() {
             </div>
           )}
 
+          {/* Tapped someone else's dot. It is selectable on purpose — the weave
+              should respond to every point in it — but there is nothing to read,
+              so the card says why rather than leaving a dead tap. */}
+          {sel !== null && items[sel] && !items[sel].mine && (
+            <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "12px 14px", borderRadius: 16, background: "linear-gradient(180deg, rgba(20,18,44,0.86), rgba(11,11,26,0.95))", border: `1px solid ${p.cardBorder}`, backdropFilter: "blur(16px)", zIndex: 2 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <span style={{ width: 9, height: 9, borderRadius: "50%", background: p.dots[items[sel].type], opacity: 0.7, flex: "0 0 auto" }} />
+                <div style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 700, color: p.text }}>
+                  {t("mind.otherTitle")}
+                </div>
+                <span style={{ fontSize: 11, color: p.subtext, flex: "0 0 auto" }}>{t(`diary.${items[sel].type}`)}</span>
+                <button onClick={() => setSel(null)} aria-label={t("mind.close")} style={{ width: 24, height: 24, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.08)", color: p.subtext, cursor: "pointer", flex: "0 0 auto", fontSize: 13, lineHeight: 1 }}>×</button>
+              </div>
+              <div style={{ fontSize: 11.5, color: p.subtext, marginTop: 7, lineHeight: 1.5 }}>{t("mind.otherWhy")}</div>
+              <Link href="/community" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 9, padding: "6px 12px", borderRadius: 999, textDecoration: "none", fontSize: 12, fontWeight: 700, color: "#fff", background: `linear-gradient(135deg, ${p.fabFrom}, ${p.fabTo})` }}>
+                {t("mind.toCommunity")}
+              </Link>
+            </div>
+          )}
+
           {/* Tapped memory: title plus what it connects to and why */}
           {sel !== null && items[sel] && items[sel].mine && (
             <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "12px 14px", borderRadius: 16, background: "linear-gradient(180deg, rgba(20,18,44,0.86), rgba(11,11,26,0.95))", border: `1px solid ${p.cardBorder}`, backdropFilter: "blur(16px)", zIndex: 2 }}>
