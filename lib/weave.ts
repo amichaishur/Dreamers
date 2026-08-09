@@ -4,8 +4,10 @@ import { DiaryType } from "@/lib/theme";
  * The "brain" behind the weave: which memories are related, and why.
  *
  * Everything here is deterministic and runs on-device. No AI, no API calls.
- * Four rules score each pair; a link only exists once the combined score passes
- * a threshold, so the lines mean something instead of decorating the screen.
+ * Seven signals score each pair — shared rare words, shared phrases, shared
+ * symbol families, closeness in time, recurring dates, same journal, similar
+ * lucidity — and a link only exists once the combined score passes a threshold,
+ * so the lines mean something instead of decorating the screen.
  */
 
 export type WeaveItem = {
@@ -27,6 +29,68 @@ const STOP = new Set([
   "the", "and", "was", "with", "that", "this", "for", "from", "were", "had",
 ]);
 
+/**
+ * The symbol lexicon: families of words that mean the same thing to a dream.
+ * Two memories that never share a word still connect when they touch the same
+ * family — "שחיתי בנהר" and "גלים בחוף" both live in water. The lists are plain
+ * Hebrew (plus a few English strays) and are meant to be curated by Amichai;
+ * adding a word here is all it takes to teach the weave a new symbol.
+ */
+const CONCEPTS: Record<string, string[]> = {
+  "מים": ["מים", "ים", "נהר", "אגם", "גל", "גלים", "שחייה", "שחיתי", "לשחות", "טביעה", "טובע", "גשם", "מבול", "בריכה", "אוקיינוס", "חוף", "מעמקים", "צלילה", "water", "sea", "ocean"],
+  "מעוף": ["טיסה", "לעוף", "עף", "עפה", "עפתי", "מעוף", "ריחוף", "לרחף", "מרחף", "מטוס", "כנפיים", "המראה", "flying", "flight"],
+  "נפילה": ["נפילה", "ליפול", "נופל", "נופלת", "נפלתי", "צניחה", "תהום", "צוק", "falling"],
+  "מרדף": ["מרדף", "רדיפה", "לברוח", "בריחה", "ברחתי", "בורח", "בורחת", "רודף", "נמלט", "מסתתר", "chase"],
+  "משפחה": ["אמא", "אבא", "סבתא", "סבא", "אחות", "אחי", "משפחה", "הורים", "דודה", "דוד", "אימא"],
+  "בית": ["בית", "דירה", "חדר", "ילדות", "מטבח", "חצר", "home"],
+  "מוות": ["מוות", "מת", "מתה", "למות", "לוויה", "קבר", "אבל", "נפטר", "נפטרה", "death"],
+  "לידה": ["תינוק", "תינוקת", "לידה", "היריון", "נולד", "נולדה", "baby"],
+  "אור": ["אור", "זריחה", "שמש", "נר", "מנורה", "קרן", "זוהר", "מואר", "light"],
+  "חושך": ["חושך", "חשוך", "צל", "צללים", "אפלה", "אפל", "עלטה", "dark", "darkness"],
+  "חיות": ["כלב", "חתול", "נחש", "ציפור", "ציפורים", "סוס", "זאב", "דג", "דגים", "אריה", "פרפר", "עכביש"],
+  "דרך": ["דרך", "כביש", "מסע", "נסיעה", "הליכה", "שביל", "צומת", "הלכתי", "journey", "road"],
+  "שערים": ["דלת", "דלתות", "שער", "כניסה", "יציאה", "מפתח", "מנעול", "פתח", "door", "gate"],
+  "לימודים": ["ספר", "לימודים", "כיתה", "מבחן", "מורה", "בחינה", "שיעור", "אוניברסיטה", "school", "exam"],
+  "שיניים": ["שיניים", "שן", "teeth"],
+  "קול": ["קול", "צעקה", "צעקתי", "שירה", "לשיר", "שרתי", "קריאה", "לחישה", "voice"],
+  "עיר": ["עיר", "רחוב", "רחובות", "בניין", "בניינים", "כיכר", "city"],
+  "יער": ["יער", "עצים", "עץ", "צמחייה", "שורשים", "forest", "tree"],
+  "אש": ["אש", "שריפה", "להבה", "להבות", "עשן", "גחלים", "fire"],
+  "שמיים": ["שמיים", "כוכבים", "כוכב", "ירח", "ענן", "עננים", "sky", "stars", "moon"],
+  "זמן": ["זמן", "שעון", "מאחר", "מאחרת", "איחור", "איחרתי", "עבר", "עתיד", "time", "clock"],
+  "מלחמה": ["מלחמה", "חייל", "חיילים", "קרב", "נשק", "אזעקה", "war"],
+  "חתונה": ["חתונה", "כלה", "חתן", "טבעת", "wedding"],
+  "אובדן": ["אבוד", "אבודה", "לאיבוד", "אבדתי", "איבדתי", "נעלם", "נעלמה", "lost"],
+  "חיפוש": ["חיפוש", "לחפש", "מחפש", "מחפשת", "חיפשתי", "למצוא", "מצאתי", "search"],
+  "מראה": ["מראה", "השתקפות", "בבואה", "מסתכל", "מסתכלת", "mirror", "reflection"],
+  "נסיעה": ["מכונית", "אוטו", "רכב", "אוטובוס", "רכבת", "תחנה", "נהיגה", "נוהג", "נוהגת", "car", "train"],
+  "שיחה": ["טלפון", "הודעה", "שיחה", "שיחת", "צלצול", "התקשר", "התקשרה", "phone", "call"],
+};
+
+/** word → family name, built once. */
+const CONCEPT_OF = new Map<string, string>();
+for (const [family, words] of Object.entries(CONCEPTS)) {
+  for (const w of words) CONCEPT_OF.set(w, family);
+}
+
+const HEB_PREFIX = new Set(["ה", "ו", "ב", "ל", "כ", "ש", "מ"]);
+
+/**
+ * Find the family of a word, forgiving Hebrew prefixes: "לים" and "בבית" reach
+ * their families without a stemmer, by peeling at most two attached letters.
+ */
+function familyOf(word: string): string | undefined {
+  let w = word;
+  for (let peel = 0; peel < 3; peel++) {
+    const hit = CONCEPT_OF.get(w);
+    if (hit) return hit;
+    // Peel down to two letters, no further: "הים" and "לים" must still reach "ים".
+    if (w.length < 3 || !HEB_PREFIX.has(w[0])) return undefined;
+    w = w.slice(1);
+  }
+  return undefined;
+}
+
 /** Meaningful words only: 3+ chars, no stopwords, punctuation stripped. */
 export function tokenize(text: string): string[] {
   return text
@@ -43,23 +107,53 @@ const DAY = 86400000;
  * each too weak on its own to draw a line.
  */
 const W_WORDS = 2.6;
+const W_PHRASE = 3.2;
+const W_CONCEPT = 2.8;
 const W_SAME_NIGHT = 1.5;
 const W_NEAR_DAYS = 0.9;
+const W_RECUR_DATE = 0.45;
 const W_SAME_TYPE = 0.5;
 const W_LUCIDITY = 0.5;
 const THRESHOLD = 1.4;
 
+/** Adjacent meaningful words, so "בית ספר" is one idea rather than two. */
+function bigrams(ws: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < ws.length - 1; i++) out.push(`${ws[i]} ${ws[i + 1]}`);
+  return out;
+}
+
 export function computeEdges(items: WeaveItem[]): WeaveEdge[] {
   const toks = items.map((it) => tokenize(`${it.title} ${it.body}`));
+  const grams = toks.map(bigrams);
+  const fams = toks.map((ws) => {
+    const s = new Set<string>();
+    for (const w of ws) {
+      const f = familyOf(w);
+      if (f) s.add(f);
+    }
+    return s;
+  });
 
   // Document frequency, so a word shared by everyone counts for almost nothing
   // while a rare one (a person, a place) counts a lot. Classic TF-IDF intuition.
+  // Phrases and symbol families are weighed the same way: a family half the
+  // journal touches ("בית") says far less than one only two memories share.
   const df = new Map<string, number>();
   toks.forEach((ws) => {
     new Set(ws).forEach((w) => df.set(w, (df.get(w) ?? 0) + 1));
   });
+  const dfGram = new Map<string, number>();
+  grams.forEach((gs) => {
+    new Set(gs).forEach((g) => dfGram.set(g, (dfGram.get(g) ?? 0) + 1));
+  });
+  const dfFam = new Map<string, number>();
+  fams.forEach((fs) => {
+    fs.forEach((f) => dfFam.set(f, (dfFam.get(f) ?? 0) + 1));
+  });
 
   const times = items.map((it) => new Date(it.createdAt).getTime());
+  const dates = items.map((it) => new Date(it.createdAt));
   const luc = items.map((it) => (it.lucidity == null || it.lucidity === "" ? NaN : Number(it.lucidity)));
   const edges: WeaveEdge[] = [];
 
@@ -88,6 +182,35 @@ export function computeEdges(items: WeaveItem[]): WeaveEdge[] {
         reasons.push(`מילים משותפות: ${shared.slice(0, 3).join(", ")}`);
       }
 
+      // 1b. Shared phrases — a two-word idea both memories say the same way is
+      // stronger evidence than either of its halves alone.
+      const gramsI = new Set(grams[i]);
+      const sharedGrams: string[] = [];
+      for (const g of new Set(grams[j])) {
+        if (gramsI.has(g)) sharedGrams.push(g);
+      }
+      if (sharedGrams.length) {
+        let s = 0;
+        for (const g of sharedGrams) s += 1 / (dfGram.get(g) ?? 1);
+        score += s * W_PHRASE;
+        sharedGrams.sort((a, b) => (dfGram.get(a) ?? 0) - (dfGram.get(b) ?? 0));
+        reasons.push(`ביטוי משותף: ${sharedGrams[0]}`);
+      }
+
+      // 1c. Shared symbol families — no common word needed; swimming a river and
+      // waves on a beach both live in water. Rarity-weighted like everything else.
+      const sharedFams: string[] = [];
+      fams[j].forEach((f) => { if (fams[i].has(f)) sharedFams.push(f); });
+      if (sharedFams.length) {
+        let s = 0;
+        // Square-root damping, gentler than the word rule: a symbol a handful of
+        // memories touch still draws a line, one half the journal touches fades.
+        for (const f of sharedFams) s += 1 / Math.sqrt(dfFam.get(f) ?? 1);
+        score += s * W_CONCEPT;
+        sharedFams.sort((a, b) => (dfFam.get(a) ?? 0) - (dfFam.get(b) ?? 0));
+        reasons.push(`סמל משותף: ${sharedFams.slice(0, 2).join(", ")}`);
+      }
+
       // 2. Time proximity
       const days = Math.abs(times[i] - times[j]) / DAY;
       if (days < 1) {
@@ -96,6 +219,13 @@ export function computeEdges(items: WeaveItem[]): WeaveEdge[] {
       } else if (days <= 2) {
         score += W_NEAR_DAYS;
         reasons.push(`קרבה בזמן: ${Math.round(days)} ימים`);
+      } else if (days >= 20 && dates[i].getDate() === dates[j].getDate()) {
+        // 2b. Recurring dates: the same day of the month, months apart — and the
+        // same calendar date a year later is the strongest echo of all. A soft
+        // signal either way, never enough to draw a link on its own.
+        const anniversary = dates[i].getMonth() === dates[j].getMonth();
+        score += W_RECUR_DATE;
+        reasons.push(anniversary ? "אותו תאריך, שנה אחרת" : `תאריך חוזר: ${dates[i].getDate()} בחודש`);
       }
 
       // 3. Same journal
