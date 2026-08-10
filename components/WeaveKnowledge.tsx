@@ -37,13 +37,24 @@ function lcg(seed: number) {
   };
 }
 
+/** How close and how far the weave can be taken. */
+const MIN_ZOOM = 0.55;
+const MAX_ZOOM = 14;
+/** The distance it opens at, and the reference point for how big a memory draws. */
+const HOME_ZOOM = 1.5;
+
 /**
  * One definition of how big a memory draws, so labels and taps never drift off it.
  * Deliberately modest, and falling away faster with depth, so the near face reads
  * clearly instead of the whole field crowding forward.
+ *
+ * Zooming grows the memory itself, not just the space between memories — without
+ * that, moving closer only spreads the field out and every star stays a speck.
+ * Measured against the opening distance, so the default view is unchanged, and
+ * damped so approaching a star enlarges it without turning it into a blob.
  */
-function radiusOf(w: number, s: number, near: number) {
-  return (1.9 + w * 6.5) * s * (0.48 + near * 0.68);
+function radiusOf(w: number, s: number, near: number, zoom: number) {
+  return (1.9 + w * 6.5) * s * (0.48 + near * 0.68) * Math.pow(zoom / HOME_ZOOM, 0.7);
 }
 
 /** Two lobes with a hollow midline. A ball would read as a planet, not a mind. */
@@ -73,7 +84,7 @@ export default function WeaveKnowledge({
   const ref = useRef<HTMLCanvasElement>(null);
   // Opens close enough to read the structure. The weave runs past the edges at
   // this distance, which is what dragging is for.
-  const zoom = useRef(1.5);
+  const zoom = useRef(HOME_ZOOM);
   // Where dragging has turned the weave to, on top of its own slow drift.
   // Sideways spins it; up and down tips it toward or away from you.
   const spin = useRef(0);
@@ -248,7 +259,7 @@ export default function WeaveKnowledge({
         const vis = n.dim * Math.max(own, n.glow);
         if (vis < 0.02) continue;
         const glowK = 1 + n.glow * 0.7;
-        const r = radiusOf(n.w, p.s, p.near) * (1 + n.glow * 0.5);
+        const r = radiusOf(n.w, p.s, p.near, zoom.current) * (1 + n.glow * 0.5);
         const a = Math.min(1, vis * (0.30 + p.near * 0.62) * (focus === null ? 1 : lit.has(n.i) ? 1 : 0.62));
         const c = n.color;
 
@@ -286,7 +297,7 @@ export default function WeaveKnowledge({
           ctx.font = `${isFocus ? 700 : 400} ${fs}px Heebo, system-ui, sans-serif`;
           ctx.direction = "rtl";
           ctx.fillStyle = isFocus ? "rgba(255,255,255,0.98)" : "rgba(255,255,255,0.72)";
-          ctx.fillText(n.label, p.sx, p.sy + radiusOf(n.w, p.s, p.near) + fs * 0.92);
+          ctx.fillText(n.label, p.sx, p.sy + radiusOf(n.w, p.s, p.near, zoom.current) + fs * 0.92);
         }
       }
       ctx.shadowBlur = 0;
@@ -308,7 +319,7 @@ export default function WeaveKnowledge({
       let best: number | null = null, bd = 26;
       for (const p of hit.current) {
         if (p.n.dim < 0.2) continue;
-        const r = radiusOf(p.n.w, p.s, p.near);
+        const r = radiusOf(p.n.w, p.s, p.near, zoom.current);
         const d = Math.hypot(p.sx - mx, p.sy - my);
         if (d < Math.max(12, r * 2.4) && d < bd) { bd = d; best = p.n.i; }
       }
@@ -321,7 +332,7 @@ export default function WeaveKnowledge({
     // memory; over it, the person was moving the weave and means no selection.
     let travelled = 0;
     const TAP_SLOP = 6;
-    const clampZ = (v: number) => Math.max(0.55, Math.min(3, v));
+    const clampZ = (v: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, v));
 
     const down = (e: PointerEvent) => {
       active.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
@@ -401,7 +412,7 @@ export default function WeaveKnowledge({
     lastZoom.current = zoomRequest;
     if (!delta) return;
     const step = delta > 0 ? 1.3 : 1 / 1.3;
-    zoom.current = Math.max(0.55, Math.min(3, zoom.current * Math.pow(step, Math.abs(delta))));
+    zoom.current = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom.current * Math.pow(step, Math.abs(delta))));
   }, [zoomRequest]);
 
   return <canvas ref={ref} style={{ position: "relative", width: "100%", height: "100%", display: "block", touchAction: "none", cursor: "grab" }} />;
