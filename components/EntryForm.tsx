@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import StarField from "@/components/StarField";
 import DiaryHex from "@/components/DiaryHex";
 import { theme } from "@/lib/theme";
@@ -109,9 +109,53 @@ export default function EntryForm({
       ? t(`kind.${kind}.ask`)
       : orDefault(`ef.detailPh.${diaryKey}`, "ef.detailPh");
 
-  // Roughly 34 characters fit on a line at this width; give the box a line for
-  // each one the prompt needs, so it never arrives with a scrollbar.
-  const detailHeight = Math.max(70, 32 + Math.ceil(detailPlaceholder.length / 30) * 22);
+  // The detail box grows with what is written in it. A dream is told in
+  // paragraphs, and a three-line window meant editing one sentence while the
+  // rest scrolled out of sight.
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  // Opens roomy, and a symbol is described in a sentence or two rather than a
+  // page, so that journal opens smaller — both still grow the same way.
+  const detailMinLines = isSymbols ? 5 : 10;
+  const DETAIL_MAX_LINES = 20;
+
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+
+    const fit = () => {
+      // The form opens inside a sheet that animates out from nothing. Measured
+      // while it is still narrow, every character wraps onto its own line and
+      // the box reports an absurd height, so wait for a real width first.
+      if (el.clientWidth < 60) return;
+      // Read the resolved typography rather than assuming it: the field
+      // inherits its font, so the line height is not ours to hardcode.
+      const cs = getComputedStyle(el);
+      const line = parseFloat(cs.lineHeight) || 24;
+      const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+      const min = detailMinLines * line + pad;
+      const max = DETAIL_MAX_LINES * line + pad;
+      // Collapse before measuring: scrollHeight only ever grows otherwise, and
+      // the box could never shrink back after text is deleted.
+      el.style.height = "auto";
+      const needed = el.scrollHeight;
+      el.style.height = `${Math.min(max, Math.max(min, needed))}px`;
+      // Past twenty lines it scrolls rather than pushing save off the screen.
+      el.style.overflowY = needed > max ? "auto" : "hidden";
+    };
+
+    fit();
+    // Once the sheet finishes opening — or the phone is turned — the width
+    // changes and the height has to be worked out again. Only width is worth
+    // reacting to; watching our own height change would loop forever.
+    let lastW = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth === lastW) return;
+      lastW = el.clientWidth;
+      fit();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [body, detailMinLines]);
 
   const showExisting = !!existingMediaName && !removeExisting && !file;
   const attachLabel = file ? file.name : showExisting ? existingMediaName! : t("ef.attachFile");
@@ -183,12 +227,12 @@ export default function EntryForm({
             <div style={label}>{isSymbols ? t("ef.symbolDetail") : t("ef.detail")}</div>
             {/* Every prompt sits inside the field it belongs to */}
             <textarea
+              ref={bodyRef}
               value={body}
               onChange={(e) => setBody(e.target.value)}
               placeholder={detailPlaceholder}
-              // Tall enough to hold its own prompt. A question the reader has to
-              // scroll to finish reading is a question they will not answer.
-              style={{ ...field, height: detailHeight, fontSize: 14, lineHeight: 1.5, resize: "none" }}
+              // Height is set by the effect above, from what has been written.
+              style={{ ...field, fontSize: 14, lineHeight: 1.5, resize: "none", overflowY: "hidden" }}
             />
           </div>
 
