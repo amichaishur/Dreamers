@@ -238,6 +238,21 @@ create policy reactions_own on public.entry_reactions for select using (user_id 
 create policy reactions_insert on public.entry_reactions for insert
   with check (user_id = auth.uid() and public.is_active());
 create policy reactions_delete on public.entry_reactions for delete using (user_id = auth.uid());
+-- The memory's owner may read what the community said on it. This is also what
+-- lets Realtime deliver the "someone answered you" event: a subscriber only
+-- receives rows their policies let them SELECT.
+create policy reactions_on_my_entries on public.entry_reactions
+  for select using (exists (
+    select 1 from public.entries e
+    where e.id = entry_id and e.user_id = auth.uid()
+  ));
+
+-- The in-app alert listens for inserts on entry_reactions; nothing arrives
+-- unless the table is in the realtime publication.
+do $$ begin
+  alter publication supabase_realtime add table public.entry_reactions;
+exception when duplicate_object then null;
+end $$;
 
 -- invitations & codes: admin-only manage. (Access checks happen server-side via functions.)
 create policy invitations_admin on public.invitations for all using (public.is_admin()) with check (public.is_admin());
