@@ -19,6 +19,12 @@ export type Stats = {
   maxLucidity: number;         // highest lucidity value logged (0 if none)
   lucidityHist: number[];      // length 11, index = level 0..10 → count
   dreamsByWeekday: number[];   // length 7, 0 = Sunday
+  // Awareness is tracked separately from lucidity: you can be aware inside a
+  // dream without the dream ever becoming lucid.
+  awarenessAvg: number;
+  awarenessCount: number;
+  awarenessPoints: LucidityPoint[];
+  awarenessHist: number[];     // length 11, index = level 0..10 → count
 };
 
 export function computeStats(entries: DbEntry[]): Stats {
@@ -64,6 +70,17 @@ export function computeStats(entries: DbEntry[]): Stats {
   const dreamsByWeekday = new Array(7).fill(0);
   dreams.forEach((e) => { dreamsByWeekday[new Date(e.created_at).getDay()]++; });
 
+  const aware = entries
+    .filter((e) => e.awareness != null && e.awareness !== "")
+    .map((e) => ({ t: new Date(e.created_at).getTime(), v: Number(e.awareness) }))
+    .filter((x) => !Number.isNaN(x.v))
+    .sort((a, b) => a.t - b.t);
+  const awarenessCount = aware.length;
+  const awarenessAvg = awarenessCount ? aware.reduce((s, x) => s + x.v, 0) / awarenessCount : 0;
+  const awarenessPoints = aware;
+  const awarenessHist = new Array(11).fill(0);
+  aware.forEach((x) => { const b = Math.max(0, Math.min(10, Math.round(x.v))); awarenessHist[b]++; });
+
   const msDay = 86400000;
   const startToday = new Date();
   startToday.setHours(0, 0, 0, 0);
@@ -80,5 +97,6 @@ export function computeStats(entries: DbEntry[]): Stats {
   return {
     total, streak, thisMonth, byType, lucidityAvg, lucidityCount, lucidityPoints, weekly,
     dreamCount, dreamMonth, lucidCount, maxLucidity, lucidityHist, dreamsByWeekday,
+    awarenessAvg, awarenessCount, awarenessPoints, awarenessHist,
   };
 }

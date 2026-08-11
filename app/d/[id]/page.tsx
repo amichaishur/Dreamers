@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Reactions from "@/components/Reactions";
 import { useParams } from "next/navigation";
 import StarField from "@/components/StarField";
 import DiaryHex from "@/components/DiaryHex";
@@ -103,6 +104,8 @@ export default function SharedDreamPage() {
           </div>
         )}
 
+        {/* Whatever this journal asked its writer, the reader sees too, so the
+            memory arrives with the same shape it was written in. */}
         {e.type === "dream" && e.lucidity && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 15px", borderRadius: 14, background: s.chipBg, border: `1px solid ${s.bord}` }}>
             <span style={{ width: 9, height: 9, borderRadius: "50%", background: d.color, boxShadow: `0 0 7px ${d.color}` }} />
@@ -112,9 +115,50 @@ export default function SharedDreamPage() {
           </div>
         )}
 
-        {/* CTA */}
-        <Link href="/welcome" style={{ marginTop: 6, height: 52, borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 9, textDecoration: "none", background: `linear-gradient(135deg, ${p.fabFrom}, ${p.fabTo})`, boxShadow: `0 12px 30px ${p.fabFrom}66` }}>
-          <span style={{ fontSize: 15.5, fontWeight: 700, color: "#fff" }}>{t("sd.join")}</span>
+        {e.type === "dream" && e.awareness && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 15px", borderRadius: 14, background: s.chipBg, border: `1px solid ${s.bord}` }}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", background: d.color, boxShadow: `0 0 7px ${d.color}` }} />
+            <span style={{ fontSize: 13.5, fontWeight: 500, color: p.subtext }}>{t("ef.awareness")}</span>
+            <span style={{ flex: 1 }} />
+            <span style={{ fontSize: 14, fontWeight: 700, color: s.nameColor, fontVariantNumeric: "tabular-nums" }}>{e.awareness} / 10</span>
+          </div>
+        )}
+
+        {/* The choice made at the top of a reality or creation entry */}
+        {e.kind && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 15px", borderRadius: 14, background: s.chipBg, border: `1px solid ${s.bord}` }}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", background: d.color, boxShadow: `0 0 7px ${d.color}` }} />
+            <span style={{ fontSize: 13.5, fontWeight: 500, color: p.subtext }}>{t("ef.kindQ")}</span>
+            <span style={{ flex: 1 }} />
+            <span style={{ fontSize: 14, fontWeight: 700, color: s.nameColor }}>{t(`kind.${e.kind}`)}</span>
+          </div>
+        )}
+
+        {/* Symbols and anchors carry three answers of their own */}
+        {e.type === "record" && (e.meta?.symbolType || e.meta?.symbolWhere || e.meta?.symbolReturn) && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 14, overflow: "hidden", background: s.chipBg, border: `1px solid ${s.bord}` }}>
+            {([
+              [t("ef.symbolType"), e.meta.symbolType ? t(`sym.${e.meta.symbolType}`) : null],
+              [t("ef.symbolWhere"), e.meta.symbolWhere ? t(`diary.${e.meta.symbolWhere}`) : null],
+              [t("ef.symbolReturn"), e.meta.symbolReturn ? t(`ret.${e.meta.symbolReturn}`) : null],
+            ] as const).filter(([, v]) => v).map(([label, value], i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 15px" }}>
+                <span style={{ width: 9, height: 9, borderRadius: "50%", background: d.color, boxShadow: `0 0 7px ${d.color}`, flex: "0 0 auto" }} />
+                <span style={{ fontSize: 13.5, fontWeight: 500, color: p.subtext }}>{label}</span>
+                <span style={{ flex: 1 }} />
+                <span style={{ fontSize: 14, fontWeight: 700, color: s.nameColor }}>{value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* How the community answers this memory */}
+        <div style={{ marginTop: 2, padding: "14px 15px", borderRadius: 16, background: p.cardBg, border: `1px solid ${p.cardBorder}` }}>
+          <Reactions entryId={e.id} accent={d.color} />
+        </div>
+
+        <Link href="/community" style={{ marginTop: 6, height: 52, borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 9, textDecoration: "none", background: `linear-gradient(135deg, ${p.fabFrom}, ${p.fabTo})`, boxShadow: `0 12px 30px ${p.fabFrom}66` }}>
+          <span style={{ fontSize: 15.5, fontWeight: 700, color: "#fff" }}>{t("rx.backToWeave")}</span>
         </Link>
         <div style={{ textAlign: "center", fontSize: 12, color: p.subtext }}>{t("sd.brand")}</div>
       </div>

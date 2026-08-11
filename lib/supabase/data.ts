@@ -7,12 +7,32 @@ import { DiaryType } from "@/lib/theme";
 export type Lucidity = string;
 export type Visibility = "private" | "public" | "custom";
 
+/** Per-journal sub-type chosen with the buttons at the top of a form. */
+export type EntryKind =
+  | "sync" | "reality_check" | "anomaly"      // reality journal
+  | "creation_seed" | "dream_seed"            // creation journal
+  | null;
+
+/** Per-journal extras that don't deserve their own column. */
+export type SymbolType = "symbol" | "anchor" | "sign";
+export type SymbolWhere = "reality" | "dream" | "creation" | "idea";
+export type SymbolReturn = "first" | "several" | "ongoing";
+
+export type EntryMeta = {
+  symbolType?: SymbolType;       // a symbol, an anchor, or a sign
+  symbolWhere?: SymbolWhere;     // which world you met it in
+  symbolReturn?: SymbolReturn;   // first time, a few times, or it walks with you
+};
+
 export type DbEntry = {
   id: string;
   type: DiaryType;
   title: string;
   body: string;
   lucidity: Lucidity | null;
+  awareness: Lucidity | null;
+  kind: EntryKind;
+  meta: EntryMeta;
   media_url: string | null;
   visibility: Visibility;
   shared_anonymous: boolean;
@@ -26,6 +46,11 @@ export type SharedEntry = {
   title: string;
   body: string;
   lucidity: Lucidity | null;
+  // Whatever the journal asked for travels with the memory, so a reader sees the
+  // same shape the writer filled in rather than a stripped-down version of it.
+  awareness: Lucidity | null;
+  kind: EntryKind;
+  meta: EntryMeta;
   shared_media_url: string | null;
   created_at: string;
   shared_anonymous: boolean;
@@ -124,6 +149,9 @@ export async function createEntry(input: {
   title: string;
   body: string;
   lucidity?: Lucidity | null;
+  awareness?: Lucidity | null;
+  kind?: EntryKind;
+  meta?: EntryMeta;
   visibility: Visibility;
   file?: File | null;
   created_at?: string;
@@ -143,6 +171,9 @@ export async function createEntry(input: {
       title: input.title,
       body: input.body,
       lucidity: input.lucidity ?? null,
+      awareness: input.awareness ?? null,
+      kind: input.kind ?? null,
+      meta: input.meta ?? {},
       visibility: input.visibility,
       media_url,
       ...(input.created_at ? { created_at: input.created_at } : {}),
@@ -160,6 +191,9 @@ export async function updateEntry(
     title?: string;
     body?: string;
     lucidity?: Lucidity | null;
+    awareness?: Lucidity | null;
+    kind?: EntryKind;
+    meta?: EntryMeta;
     visibility?: Visibility;
     media_url?: string | null;
     created_at?: string;
@@ -219,12 +253,83 @@ export async function listSharedEntries(): Promise<SharedEntry[]> {
 }
 
 export async function getSharedEntry(id: string): Promise<SharedEntry | null> {
-  if (demoEnabled()) return demoSharedList().find((e) => e.id === id) ?? null;
+  if (demoEnabled()) return demoSharedOrMine(id);
   const supabase = createClient();
   const { data, error } = await supabase.rpc("get_shared_entry", { p_id: id });
   if (error) return null;
   const rows = (data ?? []) as SharedEntry[];
   return rows[0] ?? null;
+}
+
+// ---------- Community reactions ----------
+
+export type ReactionKind = "love" | "comment" | "reflection" | "sync";
+export type Reaction = {
+  id: string;
+  kind: ReactionKind;
+  body: string;
+  created_at: string;
+  author_name: string | null;
+  mine: boolean;
+};
+export type ReactionCounts = {
+  entry_id: string;
+  loves: number;
+  comments: number;
+  reflections: number;
+  syncs: number;
+  i_loved: boolean;
+};
+export type InboxItem = {
+  id: string;
+  entry_id: string;
+  entry_title: string;
+  entry_type: DiaryType;
+  kind: ReactionKind;
+  body: string;
+  created_at: string;
+  author_name: string | null;
+  unread: boolean;
+};
+
+export async function listReactions(entryId: string): Promise<Reaction[]> {
+  if (demoEnabled()) return demoReactions(entryId);
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("list_reactions", { p_entry: entryId });
+  if (error) return [];
+  return (data ?? []) as Reaction[];
+}
+
+/** Respond to a shared memory. Sending 'love' twice takes it back. */
+export async function react(entryId: string, kind: ReactionKind, body = ""): Promise<void> {
+  if (demoEnabled()) { demoReact(entryId, kind, body); return; }
+  const supabase = createClient();
+  const { error } = await supabase.rpc("react", { p_entry: entryId, p_kind: kind, p_body: body });
+  if (error) throw error;
+}
+
+export async function listReactionCounts(): Promise<Map<string, ReactionCounts>> {
+  if (demoEnabled()) return demoCounts();
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("reaction_counts");
+  const m = new Map<string, ReactionCounts>();
+  if (error) return m;
+  ((data ?? []) as ReactionCounts[]).forEach((r) => m.set(r.entry_id, r));
+  return m;
+}
+
+export async function listInbox(): Promise<InboxItem[]> {
+  if (demoEnabled()) return demoInbox();
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("my_inbox");
+  if (error) return [];
+  return (data ?? []) as InboxItem[];
+}
+
+export async function markInboxRead(): Promise<void> {
+  if (demoEnabled()) return;
+  const supabase = createClient();
+  await supabase.rpc("mark_inbox_read");
 }
 
 export type MindDot = { type: DiaryType; mine: boolean };
@@ -258,6 +363,31 @@ export function demoEnabled(): boolean {
 
 // ---- Demo content for showcase / preview ----
 const DEMO_TITLES = ["טיסה מעל הים", "בית הילדות", "מבוך אינסופי", "שיחה עם סבתא", "נפילה איטית", "יער זוהר", "מרוץ בזמן", "דלת נסתרת", "ריקוד על המים", "עיר תת־ימית", "כנפיים חדשות", "גשר הכוכבים", "חדר ללא קירות", "אור בקצה", "מסע אל השחר"];
+
+/**
+ * Real texts, one per title, so the preview weave draws real relationships:
+ * the sea entries find each other through the water family, the doors and the
+ * maze through thresholds, the grandmother and the childhood house through
+ * family. Boilerplate repeated across every entry would teach the weave that
+ * "לדוגמה" is a meaningful symbol, which is exactly what it must not learn.
+ */
+const DEMO_BODIES = [
+  "ריחפתי נמוך מעל הים והמים היו שקטים לגמרי. הכנפיים לא היו שלי אבל ידעתי בדיוק איך להזיז אותן.",
+  "חזרתי לבית הילדות והמטבח היה בדיוק כפי שזכרתי. אמא עמדה שם בלי להסתובב אליי.",
+  "מבוך של מסדרונות בלי סוף. כל דלת שפתחתי הובילה לאותו חדר, ובכל פעם הרגשתי שאני קרוב יותר.",
+  "סבתא ישבה מולי ודיברה איטי מאוד. לא הצלחתי לשמוע את הקול שלה אבל הבנתי כל מילה.",
+  "נפלתי לאט מאוד, כמו נוצה. לא היה פחד, רק תחושה שהתהום מחכה בסבלנות.",
+  "היער היה מואר מבפנים. העצים זהרו בירוק והשורשים נשמו מתחת לרגליים שלי.",
+  "השעון רץ אחורה ואני איחרתי למשהו שכבר קרה. ניסיתי לרוץ ולא הצלחתי לזוז.",
+  "מאחורי הספרייה הייתה דלת שלא ראיתי קודם. המפתח כבר היה בכיס שלי.",
+  "רקדתי על פני המים בלי לשקוע. הגלים החזיקו אותי כאילו זה הדבר הכי טבעי.",
+  "עיר שלמה מתחת לים, עם רחובות ובניינים. שחיתי בין החלונות והכל היה שקט.",
+  "צמחו לי כנפיים חדשות והן היו כבדות מדי בהתחלה. אחר כך המראתי מעל העיר.",
+  "גשר עשוי מכוכבים נמתח בין שני הרים. הלכתי עליו והשמיים היו מתחתיי.",
+  "חדר בלי קירות, רק רצפה ותקרה. יכולתי לראות למרחק ולא היה לאן לצאת.",
+  "בקצה המסדרון הארוך הייתה נקודת אור אחת. ככל שהתקרבתי היא נשארה באותו מרחק.",
+  "יצאתי לדרך לפני הזריחה. השביל היה ארוך והשמש עלתה בדיוק כשהגעתי.",
+];
 const DEMO_AUTHORS = ["מיכל", "יונתן", "נועה", "דניאל", "תמר", "איתי", null, "שירה", null, "אורי"];
 
 function demoDateISO(daysAgo: number, hour = 3): string {
@@ -270,14 +400,112 @@ function demoPersonalEntries(): DbEntry[] {
     id: `demo-p-${i}`,
     type,
     title: DEMO_TITLES[i % DEMO_TITLES.length],
-    body: "רשומה לדוגמה במצב תצוגה.",
+    body: DEMO_BODIES[i % DEMO_BODIES.length],
     lucidity: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(5 + 3 * Math.sin(i * 1.1))))) : null,
+    awareness: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(5 + 3 * Math.sin(i * 0.8 + 1))))) : null,
+    kind: type === "reality" ? (["sync", "reality_check", "anomaly"] as const)[i % 3] : null,
+    meta: {},
     media_url: null,
     visibility: i % 5 === 0 ? "public" : "private",
     shared_anonymous: false,
     shared_media_url: null,
     created_at: demoDateISO(i * 2 + (i % 3)),
   }));
+}
+
+/**
+ * Preview reactions live in memory for the session, so hearting and commenting
+ * actually behave in a demo instead of silently doing nothing.
+ */
+const demoStore = new Map<string, Reaction[]>();
+
+function demoReactions(entryId: string): Reaction[] {
+  const existing = demoStore.get(entryId);
+  if (existing) return existing;
+  // A heart first, then words — and the words rotate through all three kinds so
+  // the preview shows what a real thread looks like.
+  const said = [
+    { kind: "comment" as const, body: "גם אני חלמתי משהו דומה בדיוק באותו שבוע." },
+    { kind: "sync" as const, body: "ראיתי את אותה הדמות למחרת ברכבת." },
+    { kind: "reflection" as const, body: "זה החזיר לי משהו שאני מתחמק/ת ממנו." },
+  ];
+  const n = (entryId.charCodeAt(entryId.length - 1) % 3) + 2;
+  const seeded: Reaction[] = Array.from({ length: n }, (_, i) => ({
+    id: `demo-r-${entryId}-${i}`,
+    // Every worded answer carries words; one with nothing in it says nothing.
+    kind: i === 0 ? "love" : said[(i - 1) % said.length].kind,
+    body: i === 0 ? "" : said[(i - 1) % said.length].body,
+    created_at: demoDateISO(i),
+    author_name: DEMO_AUTHORS[i % DEMO_AUTHORS.length] ?? "מיכל",
+    mine: false,
+  }));
+  demoStore.set(entryId, seeded);
+  return seeded;
+}
+
+/**
+ * In production `get_shared_entry` returns any memory shared with the community,
+ * including your own — which is how the mailbox opens a dream someone answered.
+ * Preview has to mirror that, or those links dead-end.
+ */
+function demoSharedOrMine(id: string): SharedEntry | null {
+  const shared = demoSharedList().find((e) => e.id === id);
+  if (shared) return shared;
+  const own = demoPersonalEntries().find((e) => e.id === id && e.visibility === "public");
+  if (!own) return null;
+  return {
+    id: own.id, type: own.type, title: own.title, body: own.body,
+    lucidity: own.lucidity, awareness: own.awareness, kind: own.kind, meta: own.meta,
+    shared_media_url: own.shared_media_url,
+    created_at: own.created_at, shared_anonymous: own.shared_anonymous,
+    author_name: demoProfileObj().display_name,
+  };
+}
+
+function demoReact(entryId: string, kind: ReactionKind, body: string) {
+  const rows = demoReactions(entryId).slice();
+  if (kind === "love") {
+    const at = rows.findIndex((r) => r.kind === "love" && r.mine);
+    if (at >= 0) rows.splice(at, 1);
+    else rows.push({ id: `demo-mine-${Date.now()}`, kind: "love", body: "", created_at: new Date().toISOString(), author_name: "אורח/ת", mine: true });
+  } else {
+    rows.push({ id: `demo-mine-${Date.now()}`, kind, body, created_at: new Date().toISOString(), author_name: "אורח/ת", mine: true });
+  }
+  demoStore.set(entryId, rows);
+}
+
+function demoCounts(): Map<string, ReactionCounts> {
+  const m = new Map<string, ReactionCounts>();
+  demoSharedList().forEach((e, i) => {
+    m.set(e.id, {
+      entry_id: e.id,
+      loves: (i * 3) % 5,
+      comments: i % 3,
+      reflections: (i + 1) % 3,
+      syncs: i % 2,
+      i_loved: i % 4 === 0,
+    });
+  });
+  return m;
+}
+
+function demoInbox(): InboxItem[] {
+  const mine = demoPersonalEntries().filter((e) => e.visibility === "public");
+  const kinds: ReactionKind[] = ["love", "comment", "sync", "reflection"];
+  const bodies = ["גם אני חלמתי משהו דומה.", "זה נגע בי מאוד.", "הסמל הזה חוזר גם אצלי.", "ראיתי את אותו המספר באותו היום."];
+  return mine.flatMap((e, i) =>
+    kinds.slice(0, (i % 3) + 2).map((kind, k) => ({
+      id: `demo-i-${i}-${k}`,
+      entry_id: e.id,
+      entry_title: e.title,
+      entry_type: e.type,
+      kind,
+      body: kind === "love" ? "" : bodies[k % bodies.length],
+      created_at: demoDateISO(i + k),
+      author_name: DEMO_AUTHORS[(i + k) % DEMO_AUTHORS.length] ?? "יונתן",
+      unread: i + k < 4,
+    }))
+  );
 }
 
 function demoSharedList(): SharedEntry[] {
@@ -290,6 +518,17 @@ function demoSharedList(): SharedEntry[] {
       title: DEMO_TITLES[(i + 3) % DEMO_TITLES.length],
       body: "חלום ששותף לקהילה במצב תצוגה. הפרטים המלאים נראים רק בקהילה.",
       lucidity: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(6 + 3 * Math.sin(i * 0.9))))) : null,
+      awareness: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(5 + 3 * Math.cos(i * 0.7))))) : null,
+      kind: type === "reality"
+        ? (["sync", "reality_check", "anomaly"] as const)[i % 3]
+        : type === "creation" ? (["creation_seed", "dream_seed"] as const)[i % 2] : null,
+      meta: type === "record"
+        ? {
+            symbolType: (["symbol", "anchor", "sign"] as const)[i % 3],
+            symbolWhere: (["reality", "dream", "creation", "idea"] as const)[i % 4],
+            symbolReturn: (["first", "several", "ongoing"] as const)[i % 3],
+          }
+        : {},
       shared_media_url: null,
       created_at: demoDateISO(i + 1),
       shared_anonymous: author === null,
@@ -335,9 +574,13 @@ function demoStatsEntries(): DbEntry[] {
     const type: DiaryType = isDream ? "dream" : others[i % others.length];
     const raw = 5 + 3 * Math.sin(i * 0.17) + 1.8 * Math.sin(i * 0.045) + ((i % 9) - 4) * 0.35;
     const v = Math.max(0, Math.min(10, Math.round(raw)));
+    // Awareness tracks lucidity loosely: often present even when a dream is not lucid.
+    const aw = Math.max(0, Math.min(10, Math.round(raw * 0.75 + 1.6 + Math.sin(i * 0.31))));
     out.push({
       id: `demo-${i}`, type, title: "חלום לדוגמה", body: "",
-      lucidity: isDream ? String(v) : null, media_url: null,
+      lucidity: isDream ? String(v) : null,
+      awareness: isDream ? String(aw) : null,
+      kind: null, meta: {}, media_url: null,
       visibility: "private", shared_anonymous: false, shared_media_url: null,
       created_at: new Date(t).toISOString(),
     });

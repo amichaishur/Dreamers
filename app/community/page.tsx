@@ -8,7 +8,8 @@ import BottomNav from "@/components/BottomNav";
 import { theme, DiaryType } from "@/lib/theme";
 import { diaryStyle } from "@/lib/diary";
 import { useLang } from "@/lib/i18n";
-import { listSharedEntries, getCommunityStats, SharedEntry, CommunityStats } from "@/lib/supabase/data";
+import { listSharedEntries, getCommunityStats, listReactionCounts, SharedEntry, CommunityStats, ReactionCounts } from "@/lib/supabase/data";
+import { ReactionIcon, REACTION_COLOR } from "@/components/Reactions";
 
 const p = theme;
 const TYPES: DiaryType[] = ["reality", "idea", "dream", "creation", "record"];
@@ -21,11 +22,13 @@ export default function CommunityPage() {
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<SharedEntry[] | null>(null);
   const [stats, setStats] = useState<CommunityStats | null>(null);
+  const [counts, setCounts] = useState<Map<string, ReactionCounts>>(new Map());
 
   useEffect(() => {
     let alive = true;
     listSharedEntries().then((r) => { if (alive) setRows(r); }).catch(() => { if (alive) setRows([]); });
     getCommunityStats().then((s) => { if (alive) setStats(s); }).catch(() => {});
+    listReactionCounts().then((c) => { if (alive) setCounts(c); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -138,6 +141,22 @@ export default function CommunityPage() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.title}</div>
                   <div style={{ fontSize: 12, color: s.nameColor, marginTop: 2 }}>{t(`diary.${e.type}`)}{who ? ` · ${who}` : ""}</div>
+                  {/* What the community already said back */}
+                  {(() => {
+                    const c = counts.get(e.id);
+                    if (!c) return null;
+                    const shown = ([["love", c.loves], ["comment", c.comments]] as const).filter(([, n]) => n > 0);
+                    if (!shown.length) return null;
+                    return (
+                      <div style={{ display: "flex", gap: 9, marginTop: 5 }}>
+                        {shown.map(([k, n]) => (
+                          <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, color: REACTION_COLOR[k], fontVariantNumeric: "tabular-nums" }}>
+                            <ReactionIcon kind={k} size={11} />{n}
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div style={{ fontSize: 12, color: p.subtext, fontVariantNumeric: "tabular-nums" }}>{date}</div>
               </Link>

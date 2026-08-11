@@ -14,6 +14,8 @@ type Props = {
   frozen?: boolean;
   nodes?: SphereNode[];      // real entries; when present drives count + colors
   dimOthers?: boolean;       // "my consciousness" mode: dim non-mine dots
+  interactive?: boolean;     // drag to turn the sphere, pinch/wheel to move closer
+  zoomRequest?: number;      // signed counter from external +/- buttons
 };
 
 // Spread mine dots evenly around the sphere so they don't clump at one pole.
@@ -63,9 +65,12 @@ function geometry(N: number) {
   return { pos, edges };
 }
 
-export default function WeaveSphere({ dots, lineColor, count = 56, dotScale = 1, frozen = false, nodes, dimOthers = false }: Props) {
+export default function WeaveSphere({ dots, lineColor, count = 56, dotScale = 1, frozen = false, nodes, dimOthers = false, interactive = false, zoomRequest = 0 }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
   const nodeKey = nodes ? nodes.map((n) => (n.mine ? "1" : "0") + n.type[0]).join("") : "";
+  // How the viewer is holding the sphere: how close, and how far they've turned it.
+  // Lives in a ref so moving it never re-renders React.
+  const view = useRef({ z: 1, spin: 0, tilt: 0 });
 
   useEffect(() => {
     const canvas = ref.current;
@@ -86,7 +91,8 @@ export default function WeaveSphere({ dots, lineColor, count = 56, dotScale = 1,
       if (stopped) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      const dpr = window.devicePixelRatio || 1;
+      // Up to 3x backing pixels so memories stay sharp as you move closer.
+      const dpr = Math.min(window.devicePixelRatio || 1, 3);
       const w = canvas.clientWidth, h = canvas.clientHeight;
       if (!w || !h) { raf = requestAnimationFrame(draw); return; }
       if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
@@ -97,8 +103,11 @@ export default function WeaveSphere({ dots, lineColor, count = 56, dotScale = 1,
       ctx.clearRect(0, 0, w, h);
 
       const { pos, edges } = geo;
-      const cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.4;
-      const rotY = time * 0.00015, tilt = 0.45;
+      const zoom = view.current.z;
+      const cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.4 * zoom;
+      // Drift on its own as always; dragging adds to that instead of replacing it.
+      const rotY = time * 0.00015 + view.current.spin;
+      const tilt = 0.45 + view.current.tilt;
       const cosY = Math.cos(rotY), sinY = Math.sin(rotY), cosT = Math.cos(tilt), sinT = Math.sin(tilt);
 
       const proj = pos.map((p, i) => {
@@ -126,7 +135,7 @@ export default function WeaveSphere({ dots, lineColor, count = 56, dotScale = 1,
       for (const i of order) {
         const p = proj[i], dep = p.depth;
         const shim = 0.88 + 0.12 * Math.sin(time * 0.0017 + p.seed);
-        const size = (4 + dep * dep * 11) * (0.95 + 0.05 * shim) * dotScale * (0.6 + 0.4 * p.bri);
+        const size = (4 + dep * dep * 11) * (0.95 + 0.05 * shim) * dotScale * (0.6 + 0.4 * p.bri) * zoom;
         const a = Math.min(1, (0.13 + dep * dep * 0.92) * shim * p.bri);
         const pastel = mix(p.color, "#ffffff", 0.28);
         const g = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, Math.max(0.5, size));
@@ -163,5 +172,79 @@ export default function WeaveSphere({ dots, lineColor, count = 56, dotScale = 1,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dots, lineColor, count, dotScale, frozen, nodeKey, dimOthers]);
 
-  return <canvas ref={ref} style={{ position: "relative", width: "100%", height: "100%", display: "block" }} />;
+  // Turn the sphere by dragging; move closer by pinching or scrolling.
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas || !interactive) return;
+    const active = new Map<number, { x: number; y: number }>();
+    let last: { x: number; y: number } | null = null;
+    let pinch = 0, zAtPinch = 1;
+    const clampZ = (v: number) => Math.max(0.6, Math.min(4, v));
+
+    const down = (e: PointerEvent) => {
+      canvas.setPointerCapture(e.pointerId);
+      active.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+      last = { x: e.offsetX, y: e.offsetY };
+      if (active.size === 2) {
+        const [a, b] = [...active.values()];
+        pinch = Math.hypot(a.x - b.x, a.y - b.y);
+        zAtPinch = view.current.z;
+      }
+    };
+    const move = (e: PointerEvent) => {
+      if (!active.has(e.pointerId)) return;
+      active.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+      if (active.size === 2) {
+        const [a, b] = [...active.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinch > 0) view.current.z = clampZ((zAtPinch * d) / pinch);
+        return;
+      }
+      if (!last) return;
+      const dx = e.offsetX - last.x, dy = e.offsetY - last.y;
+      last = { x: e.offsetX, y: e.offsetY };
+      view.current.spin += dx * 0.006;
+      // Clamp the tilt so the sphere never flips over onto its head.
+      view.current.tilt = Math.max(-1.1, Math.min(1.1, view.current.tilt + dy * 0.005));
+    };
+    const up = (e: PointerEvent) => { active.delete(e.pointerId); pinch = 0; last = null; };
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault();
+      view.current.z = clampZ(view.current.z * (e.deltaY < 0 ? 1.12 : 0.89));
+    };
+
+    canvas.addEventListener("pointerdown", down);
+    canvas.addEventListener("pointermove", move);
+    canvas.addEventListener("pointerup", up);
+    canvas.addEventListener("pointercancel", up);
+    canvas.addEventListener("wheel", wheel, { passive: false });
+    return () => {
+      canvas.removeEventListener("pointerdown", down);
+      canvas.removeEventListener("pointermove", move);
+      canvas.removeEventListener("pointerup", up);
+      canvas.removeEventListener("pointercancel", up);
+      canvas.removeEventListener("wheel", wheel);
+    };
+  }, [interactive]);
+
+  // External +/- buttons.
+  const lastZoomReq = useRef(zoomRequest);
+  useEffect(() => {
+    const delta = zoomRequest - lastZoomReq.current;
+    lastZoomReq.current = zoomRequest;
+    if (!delta) return;
+    const step = delta > 0 ? 1.3 : 1 / 1.3;
+    view.current.z = Math.max(0.6, Math.min(4, view.current.z * Math.pow(step, Math.abs(delta))));
+  }, [zoomRequest]);
+
+  return (
+    <canvas
+      ref={ref}
+      style={{
+        position: "relative", width: "100%", height: "100%", display: "block",
+        touchAction: interactive ? "none" : undefined,
+        cursor: interactive ? "grab" : undefined,
+      }}
+    />
+  );
 }
