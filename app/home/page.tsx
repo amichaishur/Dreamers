@@ -9,9 +9,11 @@ import WeaveKnowledge from "@/components/WeaveKnowledge";
 import BottomNav from "@/components/BottomNav";
 import { theme } from "@/lib/theme";
 import { useLang } from "@/lib/i18n";
-import { listConsciousnessDots, listEntries, getProfile, MindDot, DbEntry, DbProfile } from "@/lib/supabase/data";
+import { listConsciousnessDots, listEntries, getProfile, listReactions, MindDot, DbEntry, DbProfile } from "@/lib/supabase/data";
 import { initialsFrom } from "@/lib/format";
 import { WeaveItem, computeEdges } from "@/lib/weave";
+import { REACTION_COLOR } from "@/components/Reactions";
+import type { Satellite } from "@/components/WeaveKnowledge";
 
 // The weave renders one dot per memory, 1:1 with the number shown, up to this cap.
 // Beyond it (a very large community) it samples down while always keeping your own,
@@ -29,6 +31,8 @@ export default function HomePage() {
   const [profile, setProfile] = useState<DbProfile | null>(null);
   const [mode, setMode] = useState<"collective" | "mine">("collective");
   const [sel, setSel] = useState<number | null>(null);
+  // Who answered the memory currently open, as satellites for the weave to orbit.
+  const [sats, setSats] = useState<Satellite[]>([]);
   // The weave is the knowledge graph. The other two shapes stay reachable while
   // developing so they can still be compared, but anywhere the app is actually
   // deployed there is one weave and no switch.
@@ -83,6 +87,26 @@ export default function HomePage() {
   // Relationships are computed on-device from the four rules. Entries without
   // text (everyone else's) simply never score, so they stay unlinked.
   const edges = useMemo(() => computeEdges(items), [items]);
+
+  // Who answered the open memory. Only ever your own: nobody else's responses
+  // reach this device, so a foreign dot never orbits anything.
+  const openId = sel !== null && items[sel]?.mine ? items[sel].id : null;
+  useEffect(() => {
+    if (!openId) { setSats([]); return; }
+    let alive = true;
+    listReactions(openId)
+      .then((rows) => {
+        if (!alive) return;
+        setSats(rows.map((r) => ({
+          name: r.author_name ?? t("rx.someone"),
+          when: new Date(r.created_at).toLocaleDateString(lang === "en" ? "en-US" : "he-IL", { day: "numeric", month: "numeric" }),
+          kind: t(`rx.${r.kind}`),
+          color: REACTION_COLOR[r.kind],
+        })));
+      })
+      .catch(() => { if (alive) setSats([]); });
+    return () => { alive = false; };
+  }, [openId, t, lang]);
 
   const countText = loading
     ? t("home.loading")
@@ -168,7 +192,10 @@ export default function HomePage() {
                 edges={edges}
                 dimOthers={mineMode}
                 selected={sel}
-                onSelect={setSel}
+                satellites={sats}
+                // Tapping the open memory again closes it, so it is one gesture
+                // to open the responses and the same gesture to put them away.
+                onSelect={(i) => setSel((cur) => (i !== null && i === cur ? null : i))}
               />
             )}
           </div>

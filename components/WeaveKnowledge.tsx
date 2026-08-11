@@ -4,6 +4,9 @@ import { useEffect, useMemo, useRef } from "react";
 import { DiaryType } from "@/lib/theme";
 import { WeaveEdge, WeaveItem } from "@/lib/weave";
 
+/** One person who answered the open memory, drawn as a body orbiting it. */
+export type Satellite = { name: string; when: string; kind: string; color: string };
+
 type Props = {
   dots: Record<DiaryType, string>;
   items: WeaveItem[];
@@ -12,6 +15,7 @@ type Props = {
   selected?: number | null;
   onSelect?: (i: number | null) => void;
   zoomRequest?: number;
+  satellites?: Satellite[];
 };
 
 /**
@@ -80,8 +84,19 @@ type Node = {
 
 export default function WeaveKnowledge({
   dots, items, edges, dimOthers = false, selected = null, onSelect, zoomRequest = 0,
+  satellites = [],
 }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
+  // The orbits open and close on an eased scalar rather than a boolean, so the
+  // responses arrive and leave rather than blinking.
+  const rev = useRef(0);
+  const satRef = useRef<Satellite[]>(satellites);
+  satRef.current = satellites;
+  // Where each satellite last drew, so a finger can find one. Names only appear
+  // for the satellite being touched — six name blocks at once would collide with
+  // the memory's own caption and with each other.
+  const satHit = useRef<{ x: number; y: number; r: number; i: number }[]>([]);
+  const satHover = useRef<number | null>(null);
   // Opens close enough to read the structure. The weave runs past the edges at
   // this distance, which is what dragging is for.
   const zoom = useRef(HOME_ZOOM);
@@ -93,6 +108,9 @@ export default function WeaveKnowledge({
   // frame limiter steps aside so the rotation tracks the finger.
   const dragging = useRef(false);
   const selRef = useRef<number | null>(selected);
+  // Opening a different memory drops the name that was showing: it belonged to
+  // the previous memory's orbit, not this one's.
+  if (selRef.current !== selected) satHover.current = null;
   selRef.current = selected;
   const hoverRef = useRef<number | null>(null);
 
@@ -175,7 +193,12 @@ export default function WeaveKnowledge({
       // ~30fps is plenty when it is drifting on its own, but a drag has to keep
       // up with the finger or it reads as broken.
       if (!dragging.current && now - last < 33) return;
+      // Frame-rate independent easing, so a throttled tab still finishes the
+      // transition instead of freezing part-way through it.
+      const dt = Math.min(0.6, (now - last) / 1000);
       last = now;
+      const revTarget = selRef.current !== null && satRef.current.length ? 1 : 0;
+      rev.current += (revTarget - rev.current) * (1 - Math.exp(-dt * 4));
 
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
@@ -282,6 +305,89 @@ export default function WeaveKnowledge({
         ctx.beginPath(); ctx.arc(p.sx, p.sy, Math.max(0.5, r), 0, Math.PI * 2); ctx.fill();
       }
 
+      // ── The people who answered, orbiting the memory they answered ──
+      // Drawn on top of the weave and below its labels. Each responder gets its
+      // own tilted ellipse in the colour of the kind of answer they gave, so the
+      // mix of hearts, syncs and reflections reads before a single name does.
+      satHit.current = [];
+      const satsNow = satRef.current;
+      if (rev.current > 0.01 && sel !== null && satsNow.length) {
+        const host = byId.get(sel);
+        if (host) {
+          const ox = host.sx, oy = host.sy;
+          const hostR = radiusOf(host.n.w, host.s, host.near, zoom.current);
+          const reach = Math.max(46, Math.min(R * 0.5, hostR * 9));
+          const grow = 0.55 + 0.45 * rev.current;
+          for (let i = 0; i < satsNow.length; i++) {
+            const s = satsNow[i];
+            const rot = (i / satsNow.length) * Math.PI;
+            const rx = reach * (0.66 + (i % 3) * 0.14) * grow;
+            const ry = rx * 0.34;
+            const ang = t * (0.32 + i * 0.045) + i * 2.15;
+            const crot = Math.cos(rot), srot = Math.sin(rot);
+
+            // The full path, faint, then a bright arc trailing the body so the
+            // direction of travel is legible without animating a comet.
+            ctx.strokeStyle = hex(s.color, rev.current * 0.23);
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.ellipse(ox, oy, rx, ry, rot, 0, Math.PI * 2); ctx.stroke();
+            ctx.strokeStyle = hex(s.color, rev.current * 0.6);
+            ctx.lineWidth = 1.6;
+            ctx.beginPath(); ctx.ellipse(ox, oy, rx, ry, rot, ang - 1.1, ang); ctx.stroke();
+
+            const lx = Math.cos(ang) * rx, ly = Math.sin(ang) * ry;
+            const sx = ox + lx * crot - ly * srot;
+            const sy = oy + lx * srot + ly * crot;
+            // Behind the memory: smaller and dimmer, which is the whole reason
+            // the orbits read as three-dimensional at all.
+            const behind = Math.sin(ang) < -0.55;
+            const sr = Math.max(3.2, hostR * 0.62) * (behind ? 0.8 : 1) * (0.4 + 0.6 * rev.current);
+            const sa = rev.current * (behind ? 0.6 : 0.95);
+
+            const sh = ctx.createRadialGradient(sx, sy, 0, sx, sy, Math.max(0.5, sr * 4.2));
+            sh.addColorStop(0, hex(s.color, sa * 0.5));
+            sh.addColorStop(0.45, hex(s.color, sa * 0.15));
+            sh.addColorStop(1, hex(s.color, 0));
+            ctx.fillStyle = sh;
+            ctx.beginPath(); ctx.arc(sx, sy, Math.max(0.5, sr * 4.2), 0, Math.PI * 2); ctx.fill();
+
+            const sc = ctx.createRadialGradient(sx - sr * 0.3, sy - sr * 0.34, 0, sx, sy, Math.max(0.5, sr));
+            sc.addColorStop(0, `rgba(255,255,255,${Math.min(0.95, sa)})`);
+            sc.addColorStop(0.5, hex(s.color, sa));
+            sc.addColorStop(1, hex(shade(s.color, 0.6), sa * 0.55));
+            ctx.fillStyle = sc;
+            ctx.beginPath(); ctx.arc(sx, sy, Math.max(0.5, sr), 0, Math.PI * 2); ctx.fill();
+
+            satHit.current.push({ x: sx, y: sy, r: sr, i });
+          }
+
+          // Only the touched satellite says who it is.
+          const which = satHover.current;
+          if (which !== null && satsNow[which]) {
+            const at = satHit.current.find((h) => h.i === which);
+            if (at) {
+              const s = satsNow[which];
+              const above = at.y < oy;
+              const base = above ? at.y - at.r - 34 : at.y + at.r + 15;
+              ctx.textAlign = "center";
+              ctx.direction = "rtl";
+              ctx.shadowColor = "rgba(8,6,22,0.95)";
+              ctx.shadowBlur = 8;
+              ctx.font = "700 13px Heebo, system-ui, sans-serif";
+              ctx.fillStyle = hex(s.color, 0.95 * rev.current);
+              ctx.fillText(s.name, at.x, base);
+              ctx.font = "400 11px Heebo, system-ui, sans-serif";
+              ctx.fillStyle = `rgba(236,231,250,${0.62 * rev.current})`;
+              // A left-to-right mark, or a date like "10.8" flips under RTL.
+              ctx.fillText(`‎${s.when}`, at.x, base + 14);
+              ctx.fillStyle = hex(s.color, 0.72 * rev.current);
+              ctx.fillText(s.kind, at.x, base + 27);
+              ctx.shadowBlur = 0;
+            }
+          }
+        }
+      }
+
       // Labels last, only where they earn their place, and never for other people.
       ctx.textAlign = "center";
       ctx.shadowColor = "rgba(8,6,22,0.95)";
@@ -315,6 +421,16 @@ export default function WeaveKnowledge({
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
+    // Satellites are checked first: they sit on top of the weave, and a finger
+    // aiming at one must not select whatever star happens to be behind it.
+    const pickSat = (mx: number, my: number) => {
+      let best: number | null = null, bd = Infinity;
+      for (const h of satHit.current) {
+        const d = Math.hypot(h.x - mx, h.y - my);
+        if (d < Math.max(16, h.r * 2.6) && d < bd) { bd = d; best = h.i; }
+      }
+      return best;
+    };
     const pick = (mx: number, my: number) => {
       let best: number | null = null, bd = 26;
       for (const p of hit.current) {
@@ -371,11 +487,13 @@ export default function WeaveKnowledge({
         }
         return;
       }
-      const id = pick(e.offsetX, e.offsetY);
+      const onSat = pickSat(e.offsetX, e.offsetY);
+      satHover.current = onSat;
+      const id = onSat !== null ? null : pick(e.offsetX, e.offsetY);
       hoverRef.current = id;
-      canvas.style.cursor = id === null ? "grab" : "pointer";
+      canvas.style.cursor = onSat !== null || id !== null ? "pointer" : "grab";
     };
-    const leave = () => { hoverRef.current = null; };
+    const leave = () => { hoverRef.current = null; satHover.current = null; };
     const up = (e: PointerEvent) => {
       const wasPinching = active.size === 2;
       const wasDragging = dragging.current;
@@ -384,7 +502,13 @@ export default function WeaveKnowledge({
       pinch = 0;
       dragging.current = false;
       canvas.style.cursor = "grab";
-      if (!wasPinching && !wasDragging) onSelect?.(pick(e.offsetX, e.offsetY));
+      if (wasPinching || wasDragging) return;
+      // Tapping a satellite names it and leaves the memory open. Only a tap that
+      // misses every satellite reaches the weave underneath.
+      const onSat = pickSat(e.offsetX, e.offsetY);
+      if (onSat !== null) { satHover.current = onSat; return; }
+      satHover.current = null;
+      onSelect?.(pick(e.offsetX, e.offsetY));
     };
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
