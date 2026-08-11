@@ -72,8 +72,10 @@ export default function EntryForm({
 
   const [title, setTitle] = useState(initial?.title ?? "");
   const [body, setBody] = useState(initial?.body ?? "");
-  const [lucidity, setLucidity] = useState<Lucidity>(initial?.lucidity ?? "5");
-  const [awareness, setAwareness] = useState<Lucidity>(initial?.awareness ?? "5");
+  // Both start at nothing rather than the middle. A five nobody chose still
+  // lands in the averages as if it were an answer.
+  const [lucidity, setLucidity] = useState<Lucidity>(initial?.lucidity ?? "0");
+  const [awareness, setAwareness] = useState<Lucidity>(initial?.awareness ?? "0");
   const kindChoices = KINDS[diaryKey];
   const [kind, setKind] = useState<EntryKind>(initial?.kind ?? kindChoices?.[0] ?? null);
   const isSymbols = diaryKey === "record";
