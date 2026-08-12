@@ -390,6 +390,28 @@ const DEMO_BODIES = [
 ];
 const DEMO_AUTHORS = ["מיכל", "יונתן", "נועה", "דניאל", "תמר", "איתי", null, "שירה", null, "אורי"];
 
+/**
+ * The community's own memories, with their own words. They deliberately echo the
+ * personal ones through shared symbols rather than shared sentences — a stranger
+ * who also dreamt of water, of a door, of being late — because that is what the
+ * collective weave is for. Reusing the personal texts here would draw the same
+ * dream twice and make the whole thing look like a bug.
+ */
+const DEMO_SHARED = [
+  { title: "מדרגות אל הים", body: "ירדתי במדרגות אבן והמים חיכו למטה. לא נכנסתי, רק עמדתי והקשבתי לגלים." },
+  { title: "הבית שנבנה מעצמו", body: "בניתי חדר ואז הוא בנה את עצמו הלאה. כל קיר שהוספתי פתח עוד דלת." },
+  { title: "רדיפה בלי פחד", body: "מישהו רדף אחריי ברחובות ואני ברחתי, אבל לא הרגשתי מאוימת. זה היה כמו משחק ישן." },
+  { title: "המספר שחזר", body: "ראיתי את אותו מספר על שעון, על דלת ועל שלט. באותו יום הוא הופיע גם במציאות." },
+  { title: "שיחה עם אמא", body: "אמא דיברה איתי בטלפון והקול היה צעיר. שאלתי אותה משהו וכשהתעוררתי שכחתי מה." },
+  { title: "היער שנשם", body: "העצים זזו כשעברתי והשורשים נשמו מתחת לאדמה. האור ביניהם היה ירוק." },
+  { title: "איחרתי לרכבת", body: "רצתי לתחנה והשעון רץ מהר ממני. הרכבת עזבה בדיוק כשהגעתי, ולא הצטערתי." },
+  { title: "כנף אחת", body: "היתה לי כנף אחת בלבד ובכל זאת ריחפתי. ידעתי שאם אחשוב על זה יותר מדי אפול." },
+  { title: "הדלת בקיר", body: "בקיר של חדר הילדות היתה דלת שלא היתה שם קודם. פתחתי ומאחוריה היה ים." },
+  { title: "אור מעל הגשר", body: "עמדתי על גשר והשמיים היו מלאים כוכבים. אחד מהם ירד ונעצר מולי." },
+  { title: "מבוך של מראות", body: "כל פנייה החזירה לי את הפנים שלי מזווית אחרת. חיפשתי את היציאה ומצאתי את עצמי." },
+  { title: "שירה מתחת למים", body: "שחיתי עמוק ושמעתי מישהו שר. הקול הגיע מלמעלה ואני לא רציתי לעלות." },
+];
+
 function demoDateISO(daysAgo: number, hour = 3): string {
   return new Date(Date.now() - daysAgo * 86400000 - hour * 3600000).toISOString();
 }
@@ -515,8 +537,8 @@ function demoSharedList(): SharedEntry[] {
     return {
       id: `demo-s-${i}`,
       type,
-      title: DEMO_TITLES[(i + 3) % DEMO_TITLES.length],
-      body: "חלום ששותף לקהילה במצב תצוגה. הפרטים המלאים נראים רק בקהילה.",
+      title: DEMO_SHARED[i % DEMO_SHARED.length].title,
+      body: DEMO_SHARED[i % DEMO_SHARED.length].body,
       lucidity: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(6 + 3 * Math.sin(i * 0.9))))) : null,
       awareness: type === "dream" ? String(Math.max(0, Math.min(10, Math.round(5 + 3 * Math.cos(i * 0.7))))) : null,
       kind: type === "reality"

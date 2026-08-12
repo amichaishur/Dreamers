@@ -296,10 +296,20 @@ export default function WeaveKnowledge({
         ctx.fillStyle = halo;
         ctx.beginPath(); ctx.arc(p.sx, p.sy, Math.max(0.5, hr), 0, Math.PI * 2); ctx.fill();
 
+        // Yours burn from a white-hot centre; everyone else's are the colour
+        // alone. Telling them apart by brightness would not survive this being
+        // three-dimensional — a memory of yours on the far side is dimmer than a
+        // stranger's up close — but the difference between a star and a nebula
+        // holds at any depth and any zoom.
         const white = 0.35 + p.near * 0.4;
         const core = ctx.createRadialGradient(p.sx - r * 0.28, p.sy - r * 0.32, 0, p.sx, p.sy, Math.max(0.5, r));
-        core.addColorStop(0, `rgba(255,255,255,${Math.min(0.95, a * white * 1.5)})`);
-        core.addColorStop(0.5, hex(c, a));
+        if (n.mine) {
+          core.addColorStop(0, `rgba(255,255,255,${Math.min(0.95, a * white * 1.5)})`);
+          core.addColorStop(0.5, hex(c, a));
+        } else {
+          core.addColorStop(0, hex(c, a));
+          core.addColorStop(0.55, hex(c, a * 0.9));
+        }
         core.addColorStop(1, hex(shade(c, 0.6), a * 0.55));
         ctx.fillStyle = core;
         ctx.beginPath(); ctx.arc(p.sx, p.sy, Math.max(0.5, r), 0, Math.PI * 2); ctx.fill();
@@ -388,7 +398,8 @@ export default function WeaveKnowledge({
         }
       }
 
-      // Labels last, only where they earn their place, and never for other people.
+      // Labels last, only where they earn their place. A shared memory carries a
+      // title and may show it; a private one has none to show.
       ctx.textAlign = "center";
       ctx.shadowColor = "rgba(8,6,22,0.95)";
       ctx.shadowBlur = 9;
@@ -397,12 +408,16 @@ export default function WeaveKnowledge({
       if (focus !== null) {
         for (const p of proj) {
           const n = p.n;
-          if (!n.mine || !n.label || !lit.has(n.i)) continue;
+          if (!n.label || !lit.has(n.i)) continue;
           const isFocus = focus === n.i;
           const fs = (isFocus ? 17 : 12.5) * (0.86 + p.near * 0.3);
           ctx.font = `${isFocus ? 700 : 400} ${fs}px Heebo, system-ui, sans-serif`;
           ctx.direction = "rtl";
-          ctx.fillStyle = isFocus ? "rgba(255,255,255,0.98)" : "rgba(255,255,255,0.72)";
+          // Someone else's title is written in their memory's own colour, so even
+          // the writing says whose it is.
+          ctx.fillStyle = n.mine
+            ? (isFocus ? "rgba(255,255,255,0.98)" : "rgba(255,255,255,0.72)")
+            : hex(n.color, isFocus ? 0.95 : 0.7);
           ctx.fillText(n.label, p.sx, p.sy + radiusOf(n.w, p.s, p.near, zoom.current) + fs * 0.92);
         }
       }

@@ -63,23 +63,55 @@ export default function ReactionAlerts() {
       return () => { alive = false; window.clearTimeout(demo); };
     }
 
+    // Ask the inbox what is new and announce the newest thing found. Used both
+    // by the live event and by the checks below, so an answer surfaces the same
+    // way however we came to hear about it.
+    const catchUp = async (announce: boolean) => {
+      const rows = await listInbox().catch(() => [] as InboxItem[]);
+      if (!alive) return;
+      // A response arriving in the first moments — before the baseline has
+      // loaded — used to be thrown away. Take this reading as the baseline
+      // instead, and simply say nothing about it.
+      if (!seen.current) { seen.current = new Set(rows.map((r) => r.id)); return; }
+      const fresh = rows.find((r) => !seen.current!.has(r.id));
+      seen.current = new Set(rows.map((r) => r.id));
+      if (fresh && announce) show(fresh);
+    };
+
     const supabase = createClient();
     const channel = supabase
       .channel("reaction-alerts")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "entry_reactions" }, async () => {
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "entry_reactions" }, () => {
         // The row that arrives is not filtered to this user, and it carries no
         // titles, so ask the inbox what it means before showing anything.
-        const rows = await listInbox().catch(() => [] as InboxItem[]);
-        if (!alive || !seen.current) return;
-        const fresh = rows.find((r) => !seen.current!.has(r.id));
-        seen.current = new Set(rows.map((r) => r.id));
-        if (fresh) show(fresh);
+        void catchUp(true);
       })
-      .subscribe();
+      .subscribe((status) => {
+        // A channel that dies used to do it in complete silence, which is how a
+        // notification can simply never arrive and nobody find out why.
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          console.warn(`[dreamers] reaction alerts channel: ${status}`);
+        }
+      });
+
+    // The live socket is best-effort, not a guarantee: phone browsers suspend it
+    // the moment the tab goes to the background — a screen that sleeps for a
+    // second is enough — and whatever arrived meanwhile is gone. So we also ask,
+    // on a slow timer and whenever the app is looked at again. An answer now
+    // arrives within the minute even if the socket missed it entirely.
+    const tick = window.setInterval(() => {
+      if (document.visibilityState === "visible") void catchUp(true);
+    }, 60000);
+    const onVisible = () => { if (document.visibilityState === "visible") void catchUp(true); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
 
     return () => {
       alive = false;
       if (hideTimer.current) window.clearTimeout(hideTimer.current);
+      window.clearInterval(tick);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
       void supabase.removeChannel(channel);
     };
   }, []);
