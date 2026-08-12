@@ -9,7 +9,7 @@ import WeaveKnowledge from "@/components/WeaveKnowledge";
 import BottomNav from "@/components/BottomNav";
 import { theme } from "@/lib/theme";
 import { useLang } from "@/lib/i18n";
-import { listConsciousnessDots, listEntries, getProfile, listReactions, MindDot, DbEntry, DbProfile } from "@/lib/supabase/data";
+import { listConsciousnessDots, listEntries, getProfile, listReactions, listSharedEntries, MindDot, DbEntry, DbProfile, SharedEntry } from "@/lib/supabase/data";
 import { initialsFrom } from "@/lib/format";
 import { WeaveItem, computeEdges } from "@/lib/weave";
 import { REACTION_COLOR } from "@/components/Reactions";
@@ -28,6 +28,10 @@ export default function HomePage() {
   const { t, lang } = useLang();
   const [dots, setDots] = useState<MindDot[] | null>(null);
   const [own, setOwn] = useState<DbEntry[]>([]);
+  // Memories other people chose to share. Their text is already yours to read in
+  // the community tab, so the weave may use it too — which is what lets the
+  // collective view show real relationships instead of unconnected light.
+  const [shared, setShared] = useState<SharedEntry[]>([]);
   const [profile, setProfile] = useState<DbProfile | null>(null);
   const [mode, setMode] = useState<"collective" | "mine">("collective");
   const [sel, setSel] = useState<number | null>(null);
@@ -42,6 +46,7 @@ export default function HomePage() {
     let alive = true;
     listConsciousnessDots().then((d) => { if (alive) setDots(d); }).catch(() => { if (alive) setDots([]); });
     listEntries().then((e) => { if (alive) setOwn(e); }).catch(() => {});
+    listSharedEntries().then((s) => { if (alive) setShared(s); }).catch(() => {});
     getProfile().then((pr) => { if (alive) setProfile(pr); }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -59,30 +64,51 @@ export default function HomePage() {
   const dimSphere = loading || isEmpty;
   const mineMode = mode === "mine";
 
-  // The map's memories. Only your own carry text on the device: the collective
-  // weave deliberately ships nothing but an anonymous type per entry, so other
-  // people's dreams can be counted and seen glowing but never read or linked by
-  // content. Personal mode therefore shows the full relationship map; the
-  // collective view shows the whole community as anonymous light.
+  // The map's memories.
+  //
+  // A memory shared with the community carries its words; a private one never
+  // leaves its owner's device. So the collective weave is built from three
+  // kinds of point: yours, other people's *shared* memories — which can be read,
+  // and therefore related — and the rest, which arrive as nothing but a type and
+  // stay unconnected light. That is the rule the whole view rests on: sharing a
+  // memory weaves it into the collective; keeping it private leaves it a star of
+  // its own.
   const items = useMemo<WeaveItem[]>(() => {
-    if (mineMode) {
-      return own.map((e) => ({
-        id: e.id, title: e.title, body: e.body, type: e.type,
-        createdAt: e.created_at, lucidity: e.lucidity, mine: true,
-      }));
-    }
-    const mineIds = new Set(own.map((e) => e.id));
-    const others = nodes.filter((d) => !d.mine).map((d, i) => ({
-      id: `anon-${i}`, title: "", body: "", type: d.type,
-      createdAt: new Date(0).toISOString(), lucidity: null, mine: false,
-    }));
     const mine = own.map((e) => ({
       id: e.id, title: e.title, body: e.body, type: e.type,
       createdAt: e.created_at, lucidity: e.lucidity, mine: true,
     }));
-    void mineIds;
-    return [...mine, ...others];
-  }, [mineMode, own, nodes]);
+    if (mineMode) return mine;
+
+    const mineIds = new Set(own.map((e) => e.id));
+    // Every dot the community reported that is not yours, as a pool of types.
+    const pool = nodes.filter((d) => !d.mine).map((d) => d.type);
+    // Each shared memory claims the anonymous slot of its own journal, so the
+    // total still matches the number on screen exactly rather than double-counting.
+    const known: WeaveItem[] = [];
+    for (const s of shared) {
+      if (mineIds.has(s.id)) continue;
+      const at = pool.indexOf(s.type);
+      if (at < 0) continue;
+      pool.splice(at, 1);
+      known.push({
+        id: s.id, title: s.title, body: s.body, type: s.type,
+        createdAt: s.created_at, lucidity: s.lucidity, mine: false,
+      });
+    }
+    const anon = pool.map((type, i) => ({
+      id: `anon-${i}`, title: "", body: "", type,
+      createdAt: new Date(0).toISOString(), lucidity: null, mine: false,
+    }));
+    return [...mine, ...known, ...anon];
+  }, [mineMode, own, nodes, shared]);
+
+  // Who shared what, for the card. Null means they shared it anonymously.
+  const authorOf = useMemo(() => {
+    const m = new Map<string, string | null>();
+    shared.forEach((s) => m.set(s.id, s.author_name));
+    return m;
+  }, [shared]);
 
   // Relationships are computed on-device from the four rules. Entries without
   // text (everyone else's) simply never score, so they stay unlinked.
@@ -218,7 +244,7 @@ export default function HomePage() {
           {/* Tapped someone else's dot. It is selectable on purpose — the weave
               should respond to every point in it — but there is nothing to read,
               so the card says why rather than leaving a dead tap. */}
-          {sel !== null && items[sel] && !items[sel].mine && (
+          {sel !== null && items[sel] && !items[sel].mine && !items[sel].title && (
             <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "12px 14px", borderRadius: 16, background: "linear-gradient(180deg, rgba(20,18,44,0.86), rgba(11,11,26,0.95))", border: `1px solid ${p.cardBorder}`, backdropFilter: "blur(16px)", zIndex: 2 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                 <span style={{ width: 9, height: 9, borderRadius: "50%", background: p.dots[items[sel].type], opacity: 0.7, flex: "0 0 auto" }} />
@@ -235,13 +261,23 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Tapped memory: title plus what it connects to and why */}
-          {sel !== null && items[sel] && items[sel].mine && (
+          {/* Tapped memory: title plus what it connects to and why. Yours opens
+              for editing; someone else's shared memory opens to be read, under
+              the name of whoever shared it. */}
+          {sel !== null && items[sel] && items[sel].title && (
             <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "12px 14px", borderRadius: 16, background: "linear-gradient(180deg, rgba(20,18,44,0.86), rgba(11,11,26,0.95))", border: `1px solid ${p.cardBorder}`, backdropFilter: "blur(16px)", zIndex: 2 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                 <span style={{ width: 9, height: 9, borderRadius: "50%", background: p.dots[items[sel].type], boxShadow: `0 0 7px ${p.dots[items[sel].type]}`, flex: "0 0 auto" }} />
-                <Link href={`/entry/${items[sel].id}`} style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 700, color: p.text, textDecoration: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <Link href={items[sel].mine ? `/entry/${items[sel].id}` : `/d/${items[sel].id}`} style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 700, color: p.text, textDecoration: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {items[sel].title}
+                  {!items[sel].mine && (
+                    <span style={{ fontSize: 11.5, fontWeight: 500, color: p.subtext }}>
+                      {"  ·  "}
+                      {authorOf.get(items[sel].id)
+                        ? `${t("jr.by")} ${authorOf.get(items[sel].id)}`
+                        : t("jr.byAnon")}
+                    </span>
+                  )}
                 </Link>
                 <button onClick={() => setSel(null)} aria-label={t("mind.close")} style={{ width: 24, height: 24, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.08)", color: p.subtext, cursor: "pointer", flex: "0 0 auto", fontSize: 13, lineHeight: 1 }}>×</button>
               </div>
