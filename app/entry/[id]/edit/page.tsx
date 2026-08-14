@@ -38,6 +38,7 @@ export default function EditEntryPage() {
       submitKey="ef.save"
       initial={{ title: entry.title, body: entry.body, lucidity: entry.lucidity, awareness: entry.awareness, kind: entry.kind, meta: entry.meta, shared: entry.visibility === "public", anonymous: entry.shared_anonymous, createdAt: entry.created_at }}
       existingMediaName={existingMediaName}
+      entryId={entry.id}
       onBack={() => router.push("/journals")}
       onDelete={async () => {
         if (!confirm(t("se.deleteConfirm"))) return;

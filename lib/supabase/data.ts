@@ -308,6 +308,22 @@ export async function react(entryId: string, kind: ReactionKind, body = ""): Pro
   if (error) throw error;
 }
 
+/** Take back something you said. Row security limits both to your own rows. */
+export async function deleteReaction(id: string): Promise<void> {
+  if (demoEnabled()) { demoDeleteReaction(id); return; }
+  const supabase = createClient();
+  const { error } = await supabase.from("entry_reactions").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/** Change the words of something you said; the kind and its place in the thread stay. */
+export async function editReaction(id: string, body: string): Promise<void> {
+  if (demoEnabled()) { demoEditReaction(id, body); return; }
+  const supabase = createClient();
+  const { error } = await supabase.from("entry_reactions").update({ body }).eq("id", id);
+  if (error) throw error;
+}
+
 export async function listReactionCounts(): Promise<Map<string, ReactionCounts>> {
   if (demoEnabled()) return demoCounts();
   const supabase = createClient();
@@ -494,6 +510,18 @@ function demoReact(entryId: string, kind: ReactionKind, body: string) {
     rows.push({ id: `demo-mine-${Date.now()}`, kind, body, created_at: new Date().toISOString(), author_name: "אורח/ת", mine: true });
   }
   demoStore.set(entryId, rows);
+}
+
+function demoDeleteReaction(id: string) {
+  demoStore.forEach((rows, entryId) => {
+    if (rows.some((r) => r.id === id)) demoStore.set(entryId, rows.filter((r) => r.id !== id));
+  });
+}
+
+function demoEditReaction(id: string, body: string) {
+  demoStore.forEach((rows, entryId) => {
+    if (rows.some((r) => r.id === id)) demoStore.set(entryId, rows.map((r) => (r.id === id ? { ...r, body } : r)));
+  });
 }
 
 function demoCounts(): Map<string, ReactionCounts> {
