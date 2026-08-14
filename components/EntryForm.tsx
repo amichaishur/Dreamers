@@ -55,6 +55,7 @@ export default function EntryForm({
   onBack,
   onSubmit,
   onDelete,
+  entryId,
 }: {
   diaryKey: DiaryKey;
   initial?: { title?: string; body?: string; lucidity?: Lucidity | null; awareness?: Lucidity | null; kind?: EntryKind; meta?: EntryMeta; shared?: boolean; anonymous?: boolean; createdAt?: string };
@@ -64,6 +65,8 @@ export default function EntryForm({
   onBack: () => void;
   onSubmit: (values: EntryFormValues) => Promise<void>;
   onDelete?: () => void;
+  /** Set when editing an existing entry; what the share link is built from. */
+  entryId?: string;
 }) {
   const { t } = useLang();
   const d = DIARY_MAP[diaryKey];
@@ -91,6 +94,7 @@ export default function EntryForm({
   const [timeStr, setTimeStr] = useState(toTimeStr(initDate));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
   const dateRef = useRef<HTMLInputElement>(null);
   const timeRef = useRef<HTMLInputElement>(null);
   const openPicker = (r: React.RefObject<HTMLInputElement | null>) => {
@@ -372,6 +376,35 @@ export default function EntryForm({
               <div style={{ display: "flex", gap: 9 }}>
                 <button style={chip(!anonymous)} onClick={() => setAnonymous(false)}>{t("share.withName")}</button>
                 <button style={chip(anonymous)} onClick={() => setAnonymous(true)}>{t("share.anonymous")}</button>
+              </div>
+            )}
+            {/* Sending the dream out of the weave. Only once it is actually
+                shared in the database — before saving, the link leads nowhere. */}
+            {shared && entryId && initial?.shared && (
+              <div style={{ display: "flex", gap: 9 }}>
+                <button
+                  onClick={() => {
+                    const link = `${window.location.origin}/d/${entryId}`;
+                    window.open(`https://wa.me/?text=${encodeURIComponent(`${t("share.waText")} ${title}\n${link}`)}`, "_blank");
+                  }}
+                  style={{ flex: 1.4, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 12, borderRadius: 13, border: "1px solid rgba(76,217,142,0.4)", background: "rgba(76,217,142,0.12)", cursor: "pointer", font: "inherit" }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#4CD98E"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm5.4 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5s.8 1.9.8 2c.1.1.1.3 0 .5-.3.6-.7.9-.5 1.2.7 1.2 1.6 2 2.8 2.6.3.2.5.1.7-.1l.9-1c.2-.3.4-.2.7-.1l2 .9c.3.2.5.3.5.4 0 .1 0 .7-.2 1.3Z" /></svg>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#8FE7B0" }}>{t("share.whatsapp")}</span>
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(`${window.location.origin}/d/${entryId}`);
+                      setCopied(true);
+                      window.setTimeout(() => setCopied(false), 1800);
+                    } catch { /* clipboard blocked — the WhatsApp path still works */ }
+                  }}
+                  style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, padding: 12, borderRadius: 13, border: `1px solid ${p.cardBorder}`, background: p.cardBg, cursor: "pointer", font: "inherit" }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={p.text} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: p.text }}>{copied ? t("share.copied") : t("share.copyLink")}</span>
+                </button>
               </div>
             )}
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: p.subtext }}>

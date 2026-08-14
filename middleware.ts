@@ -1,7 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-const PUBLIC = ["/welcome", "/auth", "/d"];
+// /opengraph-image is what WhatsApp fetches to draw a link preview. Its crawler
+// is never signed in, so guarding it served a redirect instead of a PNG — and
+// every shared dream previewed as a black box.
+const PUBLIC = ["/welcome", "/auth", "/d", "/opengraph-image"];
 const GATE_COOKIE = "dreamers_gate";
 const GATE_TTL = 60; // seconds
 

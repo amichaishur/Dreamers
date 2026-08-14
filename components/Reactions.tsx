@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { theme } from "@/lib/theme";
 import { useLang } from "@/lib/i18n";
-import { listReactions, react, Reaction, ReactionKind } from "@/lib/supabase/data";
+import { listReactions, react, deleteReaction, editReaction, Reaction, ReactionKind } from "@/lib/supabase/data";
 import { initialsFrom } from "@/lib/format";
 
 const p = theme;
@@ -47,10 +47,29 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
   const [draft, setDraft] = useState("");
   const [kind, setKind] = useState<TextKind>("comment");
   const [busy, setBusy] = useState(false);
+  // The id of my response being rewritten, if any. The composer is reused for
+  // it — same box, same button — so editing feels like writing, not like a mode.
+  const [editing, setEditing] = useState<string | null>(null);
+  const draftRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     listReactions(entryId).then(setRows).catch(() => setRows([]));
   }, [entryId]);
+
+  // The box grows with the words in it, up to five lines, then scrolls. A long
+  // thought in a single fixed line disappears as it is being written.
+  useLayoutEffect(() => {
+    const el = draftRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const cs = getComputedStyle(el);
+    const line = parseFloat(cs.lineHeight) || 20;
+    const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const min = line + pad;
+    const max = line * 5 + pad;
+    el.style.height = `${Math.min(max, Math.max(min, el.scrollHeight))}px`;
+    el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
+  }, [draft]);
 
   const loved = (rows ?? []).some((r) => r.kind === "love" && r.mine);
   const loves = (rows ?? []).filter((r) => r.kind === "love").length;
@@ -62,6 +81,20 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
   const send = async (kind: ReactionKind, body = "") => {
     if (busy) return;
     setBusy(true);
+    // Rewriting something already said: same composer, different destination.
+    if (editing && kind !== "love") {
+      try {
+        await editReaction(editing, body);
+        setRows(await listReactions(entryId));
+        onChanged?.();
+      } catch {
+        setRows(await listReactions(entryId).catch(() => rows ?? []));
+      }
+      setEditing(null);
+      setDraft("");
+      setBusy(false);
+      return;
+    }
     // The heart answers immediately; waiting on the network to colour it in
     // makes the tap feel broken.
     if (kind === "love") {
@@ -126,6 +159,34 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
               <div style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: p.text }}>{r.author_name ?? t("rx.someone")}</span>
                 <span style={{ fontSize: 13, color: p.text, opacity: 0.86 }}> {r.body}</span>
+                {/* What I said stays mine to change or take back */}
+                {r.mine && (
+                  <span style={{ display: "inline-flex", gap: 4, marginInlineStart: 8, verticalAlign: "middle" }}>
+                    <button
+                      onClick={() => { setEditing(r.id); setKind(r.kind as TextKind); setDraft(r.body); draftRef.current?.focus(); }}
+                      aria-label={t("rx.edit")}
+                      style={{ width: 24, height: 24, borderRadius: 8, border: "none", background: "rgba(255,255,255,0.07)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={p.subtext} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (busy) return;
+                        setBusy(true);
+                        // Vanishes immediately; the network catches up behind it.
+                        setRows((prev) => prev?.filter((x) => x.id !== r.id) ?? prev);
+                        if (editing === r.id) { setEditing(null); setDraft(""); }
+                        try { await deleteReaction(r.id); onChanged?.(); } catch { /* restored below */ }
+                        setRows(await listReactions(entryId).catch(() => rows ?? []));
+                        setBusy(false);
+                      }}
+                      aria-label={t("rx.delete")}
+                      style={{ width: 24, height: 24, borderRadius: 8, border: "none", background: "rgba(232,124,124,0.1)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#E8A0A0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>
+                    </button>
+                  </span>
+                )}
                 <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3 }}>
                   {/* Which kind of answer this was, said quietly rather than as a badge */}
                   <ReactionIcon kind={r.kind} size={11} color={REACTION_COLOR[r.kind]} />
@@ -168,13 +229,30 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
             );
           })}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input
+        {editing && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: REACTION_COLOR[kind] }}>
+            <span>{t("rx.editing")}</span>
+            <button
+              onClick={() => { setEditing(null); setDraft(""); }}
+              style={{ border: "none", background: "transparent", color: p.subtext, cursor: "pointer", font: "inherit", fontSize: 11.5, textDecoration: "underline", padding: 0 }}
+            >
+              {t("rx.cancel")}
+            </button>
+          </div>
+        )}
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+          <textarea
+            ref={draftRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && draft.trim()) send(kind, draft.trim()); }}
+            onKeyDown={(e) => {
+              // Enter sends; Shift+Enter makes a line. On phones the keyboard
+              // has no such distinction and the send button does the work.
+              if (e.key === "Enter" && !e.shiftKey && draft.trim()) { e.preventDefault(); send(kind, draft.trim()); }
+            }}
             placeholder={t(`rx.${kind}.ask`)}
-            style={{ flex: 1, minWidth: 0, height: 42, padding: "0 14px", borderRadius: 999, background: p.cardBg, border: `1px solid ${p.cardBorder}`, color: p.text, fontSize: 13.5, font: "inherit", outline: "none" }}
+            rows={1}
+            style={{ flex: 1, minWidth: 0, padding: "11px 14px", borderRadius: 18, background: p.cardBg, border: `1px solid ${editing ? REACTION_COLOR[kind] : p.cardBorder}`, color: p.text, fontSize: 13.5, lineHeight: 1.45, font: "inherit", outline: "none", resize: "none", overflowY: "hidden" }}
           />
           {draft.trim() && (
             <button
@@ -182,7 +260,7 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
               disabled={busy}
               style={{ flex: "0 0 auto", padding: "0 16px", height: 42, borderRadius: 999, border: "none", cursor: "pointer", background: REACTION_COLOR[kind], color: "#15112B", fontSize: 13.5, fontWeight: 700, font: "inherit" }}
             >
-              {busy ? t("rx.sending") : t("rx.send")}
+              {busy ? t("rx.sending") : editing ? t("rx.update") : t("rx.send")}
             </button>
           )}
         </div>

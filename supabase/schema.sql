@@ -238,6 +238,8 @@ create policy reactions_own on public.entry_reactions for select using (user_id 
 create policy reactions_insert on public.entry_reactions for insert
   with check (user_id = auth.uid() and public.is_active());
 create policy reactions_delete on public.entry_reactions for delete using (user_id = auth.uid());
+create policy reactions_update on public.entry_reactions for update
+  using (user_id = auth.uid()) with check (user_id = auth.uid() and public.is_active());
 -- The memory's owner may read what the community said on it. This is also what
 -- lets Realtime deliver the "someone answered you" event: a subscriber only
 -- receives rows their policies let them SELECT.
