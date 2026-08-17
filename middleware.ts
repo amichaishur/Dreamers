@@ -43,6 +43,13 @@ export async function middleware(req: NextRequest) {
 
   // Not signed in → only public pages allowed
   if (!user) {
+    // The natural way to share a dream is to copy the address bar, which gives
+    // out /entry/<id> — the writer's own view, closed to everyone else. Rather
+    // than answering that with a login screen, send the visitor to the public
+    // page for the same dream. It shows the dream if it was shared and says so
+    // plainly if it was not; either way the link stops being a dead end.
+    const own = path.match(/^\/entry\/([0-9a-f-]{36})(?:\/edit)?\/?$/i);
+    if (own) return NextResponse.redirect(new URL(`/d/${own[1]}`, req.url));
     if (!isPublic) return NextResponse.redirect(new URL("/welcome", req.url));
     return res;
   }
