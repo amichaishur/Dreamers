@@ -124,20 +124,20 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
           things depending on where you looked. They are one thing now: tap the
           way you want to answer. A heart needs no words and lands immediately;
           the other three open the box, because they do. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
         <button
           onClick={() => send("love")}
           aria-pressed={loved}
           aria-label={t("rx.love")}
           style={{
-            display: "flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 999,
-            cursor: "pointer", font: "inherit", fontSize: 13, fontWeight: 700,
+            display: "flex", alignItems: "center", gap: 5, padding: "6px 9px", borderRadius: 999,
+            cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 700,
             background: loved ? `${heartColor}26` : "transparent",
             border: `1px solid ${loved ? heartColor : p.cardBorder}`,
             color: loved ? heartColor : p.subtext,
           }}
         >
-          <ReactionIcon kind="love" size={17} filled={loved} color={loved ? heartColor : p.subtext} />
+          <ReactionIcon kind="love" size={15} filled={loved} color={loved ? heartColor : p.subtext} />
           {loves > 0 && <span style={{ fontVariantNumeric: "tabular-nums" }}>{loves}</span>}
         </button>
         {TEXT_KINDS.map((k) => {
@@ -151,17 +151,17 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
               aria-pressed={on}
               aria-label={t(`rx.${k}`)}
               style={{
-                display: "flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 999,
-                cursor: "pointer", font: "inherit", fontSize: 13, fontWeight: 700,
+                display: "flex", alignItems: "center", gap: 5, padding: "6px 9px", borderRadius: 999,
+                cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 700,
                 background: on ? `${c}26` : "transparent",
                 border: `1px solid ${on ? c : p.cardBorder}`,
                 color: on ? c : n > 0 ? c : p.subtext,
               }}
             >
-              <ReactionIcon kind={k} size={17} color={on || n > 0 ? c : p.subtext} />
-              {/* Only the kind being written says its name, so the row stays
-                  compact while never leaving an icon unexplained. */}
-              {on && <span>{t(`rx.${k}`)}</span>}
+              <ReactionIcon kind={k} size={15} color={on || n > 0 ? c : p.subtext} />
+              {/* Every kind says its name, chosen or not. An icon alone does not
+                  tell anyone what a sync is, and they should know before tapping. */}
+              <span>{t(`rx.${k}`)}</span>
               {n > 0 && <span style={{ fontVariantNumeric: "tabular-nums" }}>{n}</span>}
             </button>
           );
