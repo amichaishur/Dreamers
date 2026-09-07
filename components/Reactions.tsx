@@ -32,11 +32,11 @@ const TEXT_KINDS = ["comment", "sync", "reflection"] as const;
 type TextKind = (typeof TEXT_KINDS)[number];
 
 /**
- * How a shared memory is answered: a heart, or words underneath it. The words
- * come in three flavours — a plain response, a sync, a reflection — which behave
- * identically and differ only in colour and icon, so the thread stays one
- * conversation rather than three. The box to write in is always open, so
- * replying takes one tap rather than two.
+ * How a shared memory is answered: one row of four ways, each a button. A heart
+ * lands immediately because it needs no words; a response, a sync and a
+ * reflection open the box, because they do. They behave identically and differ
+ * only in colour and icon, so the thread stays one conversation rather than
+ * three, and the box stays open so replying takes one tap rather than two.
  */
 export default function Reactions({ entryId, accent, onChanged }: { entryId: string; accent?: string; onChanged?: () => void }) {
   const { t, lang } = useLang();
@@ -118,32 +118,52 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Heart and count */}
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+      {/* One row, four ways to answer, every one of them a button.
+          The three worded kinds used to appear twice — as dead counters here and
+          as choosers below the box — so the same three icons meant two different
+          things depending on where you looked. They are one thing now: tap the
+          way you want to answer. A heart needs no words and lands immediately;
+          the other three open the box, because they do. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
         <button
           onClick={() => send("love")}
           aria-pressed={loved}
           aria-label={t("rx.love")}
-          style={{ display: "flex", alignItems: "center", gap: 7, background: "transparent", border: "none", padding: 0, cursor: "pointer", font: "inherit" }}
+          style={{
+            display: "flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 999,
+            cursor: "pointer", font: "inherit", fontSize: 13, fontWeight: 700,
+            background: loved ? `${heartColor}26` : "transparent",
+            border: `1px solid ${loved ? heartColor : p.cardBorder}`,
+            color: loved ? heartColor : p.subtext,
+          }}
         >
-          <ReactionIcon kind="love" size={23} filled={loved} color={loved ? heartColor : p.subtext} />
-          {loves > 0 && (
-            <span style={{ fontSize: 13.5, fontWeight: 700, color: loved ? heartColor : p.subtext, fontVariantNumeric: "tabular-nums" }}>{loves}</span>
-          )}
+          <ReactionIcon kind="love" size={17} filled={loved} color={loved ? heartColor : p.subtext} />
+          {loves > 0 && <span style={{ fontVariantNumeric: "tabular-nums" }}>{loves}</span>}
         </button>
         {TEXT_KINDS.map((k) => {
           const n = said.filter((r) => r.kind === k).length;
-          // Lit when the kind holds something, and also while you are writing one
-          // — so choosing "sync" below turns the sync icon up here orange, and it
-          // is obvious which of the three you are about to send.
-          const lit = n > 0 || kind === k;
+          const on = kind === k;
+          const c = REACTION_COLOR[k];
           return (
-            <div key={k} style={{ display: "flex", alignItems: "center", gap: 7 }} title={t(`rx.${k}`)}>
-              <ReactionIcon kind={k} size={22} color={lit ? REACTION_COLOR[k] : p.subtext} />
-              {n > 0 && (
-                <span style={{ fontSize: 13.5, fontWeight: 700, color: REACTION_COLOR[k], fontVariantNumeric: "tabular-nums" }}>{n}</span>
-              )}
-            </div>
+            <button
+              key={k}
+              onClick={() => { setKind(k); draftRef.current?.focus(); }}
+              aria-pressed={on}
+              aria-label={t(`rx.${k}`)}
+              style={{
+                display: "flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 999,
+                cursor: "pointer", font: "inherit", fontSize: 13, fontWeight: 700,
+                background: on ? `${c}26` : "transparent",
+                border: `1px solid ${on ? c : p.cardBorder}`,
+                color: on ? c : n > 0 ? c : p.subtext,
+              }}
+            >
+              <ReactionIcon kind={k} size={17} color={on || n > 0 ? c : p.subtext} />
+              {/* Only the kind being written says its name, so the row stays
+                  compact while never leaving an icon unexplained. */}
+              {on && <span>{t(`rx.${k}`)}</span>}
+              {n > 0 && <span style={{ fontVariantNumeric: "tabular-nums" }}>{n}</span>}
+            </button>
           );
         })}
       </div>
@@ -204,31 +224,6 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
 
       {/* Always open, so replying is one tap */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {/* Which kind of answer this is. Picking one only changes its colour and
-            what the box asks you — the reply itself works the same either way. */}
-        <div style={{ display: "flex", gap: 7 }}>
-          {TEXT_KINDS.map((k) => {
-            const on = kind === k;
-            const c = REACTION_COLOR[k];
-            return (
-              <button
-                key={k}
-                onClick={() => setKind(k)}
-                aria-pressed={on}
-                style={{
-                  display: "flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999,
-                  cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 700,
-                  background: on ? `${c}26` : "transparent",
-                  border: `1px solid ${on ? c : p.cardBorder}`,
-                  color: on ? c : p.subtext,
-                }}
-              >
-                <ReactionIcon kind={k} size={13} color={on ? c : p.subtext} />
-                {t(`rx.${k}`)}
-              </button>
-            );
-          })}
-        </div>
         {editing && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: REACTION_COLOR[kind] }}>
             <span>{t("rx.editing")}</span>
@@ -252,7 +247,9 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
             }}
             placeholder={t(`rx.${kind}.ask`)}
             rows={1}
-            style={{ flex: 1, minWidth: 0, padding: "11px 14px", borderRadius: 18, background: p.cardBg, border: `1px solid ${editing ? REACTION_COLOR[kind] : p.cardBorder}`, color: p.text, fontSize: 13.5, lineHeight: 1.45, font: "inherit", outline: "none", resize: "none", overflowY: "hidden" }}
+            style={{ flex: 1, minWidth: 0, padding: "11px 14px", borderRadius: 18, background: p.cardBg, // Tinted with the chosen kind, so the box and the chip above it read as one
+            // thing. Full strength while rewriting, since that is a different act.
+            border: `1px solid ${editing ? REACTION_COLOR[kind] : `${REACTION_COLOR[kind]}59`}`, color: p.text, fontSize: 13.5, lineHeight: 1.45, font: "inherit", outline: "none", resize: "none", overflowY: "hidden" }}
           />
           {draft.trim() && (
             <button
