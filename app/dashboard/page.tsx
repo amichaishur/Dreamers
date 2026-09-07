@@ -183,6 +183,10 @@ function Mailbox({ items, onOpen, t, lang }: { items: InboxItem[]; onOpen: () =>
                   <span style={{ color: "#C9B6F2" }}>{i.entry_title}</span>
                 </div>
                 {i.body && <div style={{ fontSize: 12.5, color: "rgba(236,231,250,0.78)", marginTop: 2, lineHeight: 1.45 }}>{i.body}</div>}
+                {/* When it happened. Quiet enough not to compete with what was said. */}
+                <div style={{ fontSize: 10.5, color: "rgba(236,231,250,0.42)", marginTop: 3, fontVariantNumeric: "tabular-nums" }}>
+                  {(() => { const d = new Date(i.created_at); return `${d.getDate()}.${d.getMonth() + 1}.${String(d.getFullYear()).slice(2)}`; })()}
+                </div>
               </div>
               {i.unread && <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#F08BA8", flex: "0 0 auto", marginTop: 8 }} />}
             </Link>

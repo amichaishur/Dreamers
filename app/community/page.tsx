@@ -145,7 +145,9 @@ export default function CommunityPage() {
                   {(() => {
                     const c = counts.get(e.id);
                     if (!c) return null;
-                    const shown = ([["love", c.loves], ["comment", c.comments]] as const).filter(([, n]) => n > 0);
+                    // All four, zeros included: the point of the row is to show
+                    // the whole shape of the response, not only what happened.
+                    const shown = ([["love", c.loves], ["comment", c.comments], ["sync", c.syncs], ["reflection", c.reflections]] as const);
                     if (!shown.length) return null;
                     return (
                       <div style={{ display: "flex", gap: 9, marginTop: 5 }}>

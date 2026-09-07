@@ -26,12 +26,18 @@ export async function generateMetadata(
       signal: AbortSignal.timeout(4000),
     });
     if (!res.ok) return {};
-    const rows: { title?: string; author_name?: string | null; shared_anonymous?: boolean }[] = await res.json();
+    const rows: { title?: string; type?: string; author_name?: string | null; shared_anonymous?: boolean }[] = await res.json();
     const e = Array.isArray(rows) ? rows[0] : undefined;
     if (!e?.title) return {};
 
+    // A creation shared as a dream reads as a mistake. Name what it actually is.
+    const KIND: Record<string, string> = {
+      dream: "חלום", creation: "יצירה", idea: "רעיון",
+      reality: "מציאות", record: "סמלים ועוגנים",
+    };
+    const what = KIND[e.type ?? "dream"] ?? "זיכרון";
     const by = e.shared_anonymous || !e.author_name ? "" : ` · מאת ${e.author_name}`;
-    const description = `חלום מתוך מארג החיים${by}`;
+    const description = `${what} מתוך מארג החיים${by}`;
     return {
       title: `${e.title} · Dreamers`,
       description,

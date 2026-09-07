@@ -1,10 +1,11 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import StarField from "@/components/StarField";
-import WeaveJoin from "@/components/WeaveJoin";
+import WeaveKnowledge from "@/components/WeaveKnowledge";
+import { WeaveItem, WeaveEdge } from "@/lib/weave";
 import { theme, DiaryType } from "@/lib/theme";
 import { rgba, mix } from "@/lib/color";
 import { useLang } from "@/lib/i18n";
@@ -18,6 +19,34 @@ const HE: Record<DiaryType, [string, string]> = {
   record: ["הרשומה", "נשזרה"],
 };
 
+/**
+ * The weave the new memory has just joined. The real one needs the whole
+ * journal to draw; this is a small stand-in with the same component, so what
+ * appears here is the map as it actually looks rather than a different graphic.
+ * Deterministic, so the moment is the same every time.
+ */
+function revealWeave(mineType: DiaryType): { items: WeaveItem[]; edges: WeaveEdge[] } {
+  const kinds: DiaryType[] = ["dream", "creation", "idea", "reality", "record"];
+  const items: WeaveItem[] = Array.from({ length: 46 }, (_, i) => ({
+    id: `r${i}`,
+    title: "",
+    body: "",
+    // The memory just written is the one that burns: it is the only "mine" here.
+    type: i === 0 ? mineType : kinds[(i * 3 + 1) % kinds.length],
+    createdAt: new Date(0).toISOString(),
+    lucidity: null,
+    mine: i === 0,
+  }));
+  // Relationships are not computed here — there is no text to compute them from.
+  // A fixed, uneven mesh gives the field the same knotted look the real one has.
+  const edges: WeaveEdge[] = [];
+  for (let i = 1; i < items.length; i++) {
+    const a = i, b = (i * 7 + 3) % items.length;
+    if (a !== b) edges.push({ a, b, strength: 1.6, reasons: [] });
+  }
+  return { items, edges };
+}
+
 function RevealInner() {
   const sp = useSearchParams();
   const { t, lang } = useLang();
@@ -29,6 +58,7 @@ function RevealInner() {
   const c = p.dots[key];
   const diaryName = t(`diary.${key}`);
   const [theLabel, wove] = HE[key];
+  const weave = useMemo(() => revealWeave(key), [key]);
   const mainLine = lang === "en" ? `The ${diaryName.toLowerCase()} was woven into the Weave` : `${theLabel} ${wove} במארג`;
   const bright = mix(c, "#ffffff", 0.4);
   const hexLite = mix(c, "#ffffff", 0.55);
@@ -48,9 +78,9 @@ function RevealInner() {
           </div>
         </div>
 
-        {/* WeaveJoin B — approved reveal animation */}
-        <div style={{ flex: "0 1 auto", display: "flex", alignItems: "center", justifyContent: "center", marginTop: "clamp(8px, 3vh, 26px)" }}>
-          <WeaveJoin color={c} size={300} />
+        {/* The weave itself, the one the home screen draws */}
+        <div style={{ flex: "0 1 auto", width: "min(340px, 88vw)", height: "min(340px, 88vw)", marginTop: "clamp(8px, 3vh, 26px)" }}>
+          <WeaveKnowledge dots={p.dots} items={weave.items} edges={weave.edges} />
         </div>
 
         {/* copy */}
