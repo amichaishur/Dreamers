@@ -226,7 +226,7 @@ const HE: Dict = {
   "share.unshare": "בטל/י שיתוף",
   "share.shareBtn": "שתף/י חלום",
   "share.publicNote": "משותף עם הקהילה · כל אחד עם הלינק יכול לראות",
-  "share.waText": "חלום מתוך Dreamers ✦ מארג החיים:",
+  "share.waFrom": "מתוך Dreamers ✦ מארג החיים:",
 
   "dp.title": "בחירת יומן",
   "dp.sub": "לאן נשזור את הזיכרון?",
@@ -596,7 +596,7 @@ const EN: Dict = {
   "share.unshare": "Stop sharing",
   "share.shareBtn": "Share dream",
   "share.publicNote": "Shared with the community · anyone with the link can view",
-  "share.waText": "A dream from Dreamers ✦ The Weave of Life:",
+  "share.waFrom": "from Dreamers ✦ The Weave of Life:",
 
   "dp.title": "Choose a journal",
   "dp.sub": "Where shall we weave this memory?",
