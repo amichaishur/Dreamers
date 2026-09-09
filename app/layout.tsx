@@ -6,6 +6,10 @@ import { LangProvider } from "@/lib/i18n";
 import { EntrySheetProvider } from "@/components/EntrySheet";
 import ReactionAlerts from "@/components/ReactionAlerts";
 
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://dreamers-maarag.netlify.app");
+
 const heebo = Heebo({
   subsets: ["hebrew", "latin"],
   weight: ["300", "400", "500", "600", "700", "800"],
@@ -13,13 +17,16 @@ const heebo = Heebo({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://dreamers-maarag.netlify.app"),
+  // Whichever site is actually serving this. Staging used to point its preview
+  // image at production, which meant a second host to reach before a card could
+  // be drawn.
+  metadataBase: new URL(SITE_URL),
   title: "Dreamers · מארג החיים",
   description: "מערכת ההפעלה האנושית",
   openGraph: {
     title: "Dreamers · מארג החיים",
     description: "מערכת ההפעלה האנושית",
-    url: "https://dreamers-maarag.netlify.app",
+    url: SITE_URL,
     siteName: "Dreamers",
     type: "website",
   },
