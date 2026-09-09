@@ -396,7 +396,9 @@ export default function EntryForm({
                 <button
                   onClick={() => {
                     const link = `${window.location.origin}/d/${entryId}`;
-                    window.open(`https://wa.me/?text=${encodeURIComponent(`${t("share.waText")} ${title}\n${link}`)}`, "_blank");
+                    // Named after the journal it came from, not always "a dream".
+                    const intro = `${t(`diary.${diaryKey}`)} ${t("share.waFrom")}`;
+                    window.open(`https://wa.me/?text=${encodeURIComponent(`${intro} ${title}\n${link}`)}`, "_blank");
                   }}
                   style={chipAction("rgba(76,217,142,0.4)", "rgba(76,217,142,0.12)", "#8FE7B0")}
                 >

@@ -22,9 +22,9 @@ type Props = {
  * The living knowledge graph, built to the Claude Design handoff.
  *
  * Memories are sampled into two ellipsoid lobes split by a central fissure, so
- * the mass reads as a brain rather than a ball. The whole thing turns slowly,
- * each memory drifts on its own three frequencies, and selecting one pulls it to
- * the front while its neighbours gather and everything else is pushed out.
+ * the mass reads as a brain rather than a ball. The whole thing turns slowly and
+ * each memory drifts on its own three frequencies. Choosing one lights that star
+ * and names it; the weave itself holds still.
  *
  * Everything below runs on plain mutable objects and draws straight to canvas.
  * Nothing here belongs in React state: at 30fps it would tear the app apart.
@@ -152,33 +152,13 @@ export default function WeaveKnowledge({
     });
   }, [items, dots, adjacency]);
 
-  // Selecting a memory reorganises the whole network around it.
+  // Choosing a memory used to pull its neighbours in and push everything else
+  // away, which turned one tap into a rearrangement of the whole map. Tapping is
+  // now for looking at one memory: the weave holds still and only the chosen
+  // star answers.
   useEffect(() => {
-    const sel = selected;
-    if (sel === null || !nodes[sel]) {
-      nodes.forEach((n) => { n.tx = n.hx; n.ty = n.hy; n.tz = n.hz; n.tdim = 1; });
-      return;
-    }
-    const hop = new Map<number, number>([[sel, 0]]);
-    let frontier = [sel];
-    for (let d = 1; d <= 2 && frontier.length; d++) {
-      const nextF: number[] = [];
-      frontier.forEach((v) => (adjacency.get(v) ?? new Set()).forEach((w) => {
-        if (!hop.has(w)) { hop.set(w, d); nextF.push(w); }
-      }));
-      frontier = nextF;
-    }
-    nodes.forEach((n) => {
-      const d = hop.get(n.i);
-      if (d === 0) { n.tx = 0; n.ty = 0; n.tz = 0.62; n.tdim = 1; return; }
-      const len = Math.hypot(n.hx, n.hy, n.hz) || 1;
-      const r = d === 1 ? 0.52 : d === 2 ? 0.88 : 1.28;
-      n.tx = (n.hx / len) * r;
-      n.ty = (n.hy / len) * r * 0.8;   // keep the mass wide rather than tall
-      n.tz = (n.hz / len) * r;
-      n.tdim = d === 1 ? 1 : d === 2 ? 0.6 : 0.16;
-    });
-  }, [selected, nodes, adjacency]);
+    nodes.forEach((n) => { n.tx = n.hx; n.ty = n.hy; n.tz = n.hz; n.tdim = 1; });
+  }, [selected, nodes]);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -218,10 +198,9 @@ export default function WeaveKnowledge({
       const sel = selRef.current, hov = hoverRef.current;
       const focus = hov ?? sel;
       const lit = new Set<number>();
-      if (focus !== null) {
-        lit.add(focus);
-        (adjacency.get(focus) ?? new Set()).forEach((w) => lit.add(w));
-      }
+      // Only the chosen star. Lighting its neighbours too is what made a tap
+      // read as opening a web rather than focusing on one memory.
+      if (focus !== null) lit.add(focus);
 
       const cx = W / 2, cy = H / 2;
       const R = Math.min(W, H) * 0.44 * zoom.current;

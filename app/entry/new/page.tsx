@@ -93,7 +93,8 @@ function NewEntryInner() {
         });
         if (v.shared) await setEntrySharing(entry.id, { shared: true, anonymous: v.anonymous });
         const all = await listEntries();
-        router.push(`/entry/reveal?diary=${selected}&count=${all.length}&id=${entry.id}`);
+        router.push(`/entry/reveal?diary=${selected}&count=${all.length}&id=${entry.id}`
+          + (v.shared ? `&shared=1&title=${encodeURIComponent(v.title)}` : ""));
       }}
     />
   );

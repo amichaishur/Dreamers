@@ -101,7 +101,7 @@ export async function setProfileAvatar(url: string | null): Promise<void> {
 }
 
 export async function listEntries(): Promise<DbEntry[]> {
-  if (demoEnabled()) return demoPersonalEntries();
+  if (demoEnabled()) return demoOwnList();
   const supabase = createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return [];
@@ -116,13 +116,15 @@ export async function listEntries(): Promise<DbEntry[]> {
 }
 
 export async function getEntry(id: string): Promise<DbEntry | null> {
-  if (demoEnabled()) return demoPersonalEntries().find((e) => e.id === id) ?? null;
+  if (demoEnabled()) return demoOwnList().find((e) => e.id === id) ?? null;
   const supabase = createClient();
   const { data } = await supabase.from("entries").select("*").eq("id", id).maybeSingle();
   return (data as DbEntry) ?? null;
 }
 
 export async function uploadAttachment(file: File): Promise<string> {
+  // Nothing is stored in a preview; the name is enough to show it was attached.
+  if (demoEnabled()) return `demo/${file.name}`;
   const supabase = createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) throw new Error("not signed in");
@@ -156,6 +158,19 @@ export async function createEntry(input: {
   file?: File | null;
   created_at?: string;
 }): Promise<DbEntry> {
+  if (demoEnabled()) {
+    const row: DbEntry = {
+      id: `demo-new-${Date.now()}`,
+      type: input.type, title: input.title, body: input.body,
+      lucidity: input.lucidity ?? null, awareness: input.awareness ?? null,
+      kind: input.kind ?? null, meta: input.meta ?? {},
+      media_url: input.file ? `demo/${input.file.name}` : null,
+      visibility: input.visibility, shared_anonymous: false, shared_media_url: null,
+      created_at: input.created_at ?? new Date().toISOString(),
+    };
+    demoOwnList().unshift(row);
+    return row;
+  }
   const supabase = createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) throw new Error("not signed in");
@@ -199,6 +214,13 @@ export async function updateEntry(
     created_at?: string;
   }
 ): Promise<DbEntry> {
+  if (demoEnabled()) {
+    const list = demoOwnList();
+    const at = list.findIndex((e) => e.id === id);
+    if (at < 0) throw new Error("not found");
+    list[at] = { ...list[at], ...patch } as DbEntry;
+    return list[at];
+  }
   const supabase = createClient();
   const { data, error } = await supabase.from("entries").update(patch).eq("id", id).select().single();
   if (error) throw error;
@@ -206,6 +228,12 @@ export async function updateEntry(
 }
 
 export async function deleteEntry(id: string): Promise<void> {
+  if (demoEnabled()) {
+    const list = demoOwnList();
+    const at = list.findIndex((e) => e.id === id);
+    if (at >= 0) list.splice(at, 1);
+    return;
+  }
   const supabase = createClient();
   const { error } = await supabase.from("entries").delete().eq("id", id);
   if (error) throw error;
@@ -214,6 +242,13 @@ export async function deleteEntry(id: string): Promise<void> {
 // ---------- Community sharing ----------
 
 export async function setEntrySharing(id: string, opts: { shared: boolean; anonymous: boolean }): Promise<DbEntry> {
+  if (demoEnabled()) {
+    const list = demoOwnList();
+    const at = list.findIndex((e) => e.id === id);
+    if (at < 0) throw new Error("not found");
+    list[at] = { ...list[at], visibility: opts.shared ? "public" : "private", shared_anonymous: opts.anonymous };
+    return list[at];
+  }
   const supabase = createClient();
   const patch: {
     visibility: Visibility;
@@ -430,6 +465,18 @@ const DEMO_SHARED = [
 
 function demoDateISO(daysAgo: number, hour = 3): string {
   return new Date(Date.now() - daysAgo * 86400000 - hour * 3600000).toISOString();
+}
+
+/**
+ * The preview's own journal, held for the session. Showing a client around means
+ * letting them write, change and delete something and watch it land in the
+ * weave — reading alone is not the product. Nothing here reaches the database,
+ * and it resets when the tab closes.
+ */
+let demoOwn: DbEntry[] | null = null;
+function demoOwnList(): DbEntry[] {
+  if (!demoOwn) demoOwn = demoPersonalEntries();
+  return demoOwn;
 }
 
 function demoPersonalEntries(): DbEntry[] {

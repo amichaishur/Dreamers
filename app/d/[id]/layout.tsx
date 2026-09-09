@@ -23,20 +23,39 @@ export async function generateMetadata(
       method: "POST",
       headers: { apikey: key, "Content-Type": "application/json" },
       body: JSON.stringify({ p_id: id }),
-      signal: AbortSignal.timeout(4000),
+      // WhatsApp's preview crawler waits only so long. Past this point a
+      // generic card is worth more than a perfect one it never sees.
+      signal: AbortSignal.timeout(1500),
+      cache: "force-cache",
     });
     if (!res.ok) return {};
-    const rows: { title?: string; author_name?: string | null; shared_anonymous?: boolean }[] = await res.json();
+    const rows: { title?: string; type?: string; author_name?: string | null; shared_anonymous?: boolean }[] = await res.json();
     const e = Array.isArray(rows) ? rows[0] : undefined;
     if (!e?.title) return {};
 
+    // A creation shared as a dream reads as a mistake. Name what it actually is.
+    const KIND: Record<string, string> = {
+      dream: "חלום", creation: "יצירה", idea: "רעיון",
+      reality: "מציאות", record: "סמלים ועוגנים",
+    };
+    const what = KIND[e.type ?? "dream"] ?? "זיכרון";
     const by = e.shared_anonymous || !e.author_name ? "" : ` · מאת ${e.author_name}`;
-    const description = `חלום מתוך מארג החיים${by}`;
+    const description = `${what} מתוך מארג החיים${by}`;
     return {
       title: `${e.title} · Dreamers`,
       description,
-      openGraph: { title: e.title, description, siteName: "Dreamers", type: "article" },
-      twitter: { card: "summary_large_image", title: e.title, description },
+      // The image has to be named again here. Declaring an openGraph block
+      // replaces the site's entirely, so a real shared memory was going out with
+      // a title and no picture at all — which is how a card ends up looking
+      // broken, or not being drawn.
+      openGraph: {
+        title: e.title, description, siteName: "Dreamers", type: "article",
+        images: [{ url: "/opengraph-image.png", width: 1200, height: 630, alt: "Dreamers" }],
+      },
+      twitter: {
+        card: "summary_large_image", title: e.title, description,
+        images: ["/opengraph-image.png"],
+      },
     };
   } catch {
     // The page still opens; the preview just falls back to the site-wide card.

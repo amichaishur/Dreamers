@@ -281,23 +281,13 @@ export default function HomePage() {
                 </Link>
                 <button onClick={() => setSel(null)} aria-label={t("mind.close")} style={{ width: 24, height: 24, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.08)", color: p.subtext, cursor: "pointer", flex: "0 0 auto", fontSize: 13, lineHeight: 1 }}>×</button>
               </div>
-              {(() => {
-                const linked = edges.filter((e) => e.a === sel || e.b === sel).sort((x, y) => y.strength - x.strength).slice(0, 3);
-                if (!linked.length) return <div style={{ fontSize: 11.5, color: p.subtext, marginTop: 6 }}>{t("mind.noLinks")}</div>;
-                return (
-                  <div style={{ marginTop: 7, display: "flex", flexDirection: "column", gap: 5 }}>
-                    {linked.map((e, k) => {
-                      const o = items[e.a === sel ? e.b : e.a];
-                      return (
-                        <div key={k} style={{ fontSize: 11.5, color: p.subtext, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          <span style={{ color: p.text }}>{o.title}</span>
-                          {" · "}{e.reasons[0]}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
+              {/* The opening of the memory itself, rather than a list of what it
+                  connects to. Tapping the title above opens the whole thing. */}
+              {items[sel].body && (
+                <div style={{ fontSize: 11.5, color: p.subtext, marginTop: 7, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                  {items[sel].body}
+                </div>
+              )}
             </div>
           )}
 

@@ -128,7 +128,6 @@ export default function SharedDreamPage() {
         {e.kind && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 15px", borderRadius: 14, background: s.chipBg, border: `1px solid ${s.bord}` }}>
             <span style={{ width: 9, height: 9, borderRadius: "50%", background: d.color, boxShadow: `0 0 7px ${d.color}` }} />
-            <span style={{ fontSize: 13.5, fontWeight: 500, color: p.subtext }}>{t("ef.kindQ")}</span>
             <span style={{ flex: 1 }} />
             <span style={{ fontSize: 14, fontWeight: 700, color: s.nameColor }}>{t(`kind.${e.kind}`)}</span>
           </div>
