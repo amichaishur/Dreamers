@@ -37,6 +37,8 @@ export type DbEntry = {
   visibility: Visibility;
   shared_anonymous: boolean;
   shared_media_url: string | null;
+  /** The name an anonymous share went out under; null means "shared anonymously". */
+  shared_nickname?: string | null;
   created_at: string;
 };
 
@@ -64,6 +66,8 @@ export type DbProfile = {
   email: string;
   display_name: string | null;
   avatar_url?: string | null;
+  /** The default name for anonymous shares, kept between them. */
+  nickname?: string | null;
   role: "user" | "admin";
   status: "pending" | "active" | "suspended";
   language: "he" | "en";
@@ -90,6 +94,27 @@ export async function uploadAvatar(file: File): Promise<string> {
   if (error) throw error;
   const { data } = supabase.storage.from("avatars").getPublicUrl(path);
   return data.publicUrl;
+}
+
+/**
+ * A nickname as it will be stored: trimmed, inner whitespace collapsed, at most
+ * 24 characters. Anything shorter than two means "no nickname", not a one-letter
+ * name — the database refuses those anyway.
+ */
+export function cleanNickname(raw: string | null | undefined): string | null {
+  const v = (raw ?? "").replace(/\s+/g, " ").trim().slice(0, 24).trim();
+  return v.length >= 2 ? v : null;
+}
+
+/** Keep a nickname on the profile so the next anonymous share offers it. */
+export async function setProfileNickname(raw: string | null): Promise<void> {
+  const nickname = cleanNickname(raw);
+  if (demoEnabled()) { demoProfile = { ...demoProfileObj(), nickname }; return; }
+  const supabase = createClient();
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) throw new Error("not signed in");
+  const { error } = await supabase.from("profiles").update({ nickname }).eq("id", auth.user.id);
+  if (error) throw error;
 }
 
 export async function setProfileAvatar(url: string | null): Promise<void> {
@@ -241,22 +266,33 @@ export async function deleteEntry(id: string): Promise<void> {
 
 // ---------- Community sharing ----------
 
-export async function setEntrySharing(id: string, opts: { shared: boolean; anonymous: boolean }): Promise<DbEntry> {
+export async function setEntrySharing(
+  id: string,
+  opts: { shared: boolean; anonymous: boolean; nickname?: string | null },
+): Promise<DbEntry> {
+  // The name this memory goes out under. Only an anonymous share carries one;
+  // sharing with your own name, or keeping it private, clears it.
+  const nickname = opts.shared && opts.anonymous ? cleanNickname(opts.nickname) : null;
+  // A nickname chosen while sharing is remembered for next time. Clearing the
+  // field for one memory leaves the saved default alone.
+  if (nickname) await setProfileNickname(nickname).catch(() => {});
   if (demoEnabled()) {
     const list = demoOwnList();
     const at = list.findIndex((e) => e.id === id);
     if (at < 0) throw new Error("not found");
-    list[at] = { ...list[at], visibility: opts.shared ? "public" : "private", shared_anonymous: opts.anonymous };
+    list[at] = { ...list[at], visibility: opts.shared ? "public" : "private", shared_anonymous: opts.anonymous, shared_nickname: nickname };
     return list[at];
   }
   const supabase = createClient();
   const patch: {
     visibility: Visibility;
     shared_anonymous: boolean;
+    shared_nickname: string | null;
     shared_media_url?: string | null;
   } = {
     visibility: opts.shared ? "public" : "private",
     shared_anonymous: opts.shared ? opts.anonymous : false,
+    shared_nickname: nickname,
   };
 
   if (opts.shared) {
@@ -306,6 +342,9 @@ export type Reaction = {
   created_at: string;
   author_name: string | null;
   mine: boolean;
+  /** Written by the author of an anonymous memory: author_name is then their
+   *  nickname, or null, and must never be read as a real name. */
+  anon_author?: boolean;
 };
 export type ReactionCounts = {
   entry_id: string;
@@ -543,7 +582,7 @@ function demoSharedOrMine(id: string): SharedEntry | null {
     lucidity: own.lucidity, awareness: own.awareness, kind: own.kind, meta: own.meta,
     shared_media_url: own.shared_media_url,
     created_at: own.created_at, shared_anonymous: own.shared_anonymous,
-    author_name: demoProfileObj().display_name,
+    author_name: own.shared_anonymous ? (own.shared_nickname ?? null) : demoProfileObj().display_name,
   };
 }
 
@@ -629,13 +668,16 @@ function demoSharedList(): SharedEntry[] {
       shared_media_url: null,
       created_at: demoDateISO(i + 1),
       shared_anonymous: author === null,
-      author_name: author,
+      author_name: author ?? (i === 6 ? "חולמת_הלילה" : null),
     };
   });
 }
 
+// The preview's profile, held for the session so a nickname set in it sticks.
+let demoProfile: DbProfile | null = null;
 function demoProfileObj(): DbProfile {
-  return { id: "demo-user", email: "guest@dreamers.app", display_name: "אורח/ת", avatar_url: null, role: "user", status: "active", language: "he", created_at: demoDateISO(120) };
+  if (!demoProfile) demoProfile = { id: "demo-user", email: "guest@dreamers.app", display_name: "אורח/ת", avatar_url: null, nickname: null, role: "user", status: "active", language: "he", created_at: demoDateISO(120) };
+  return demoProfile;
 }
 
 const DEMO_TYPES: DiaryType[] = ["dream", "creation", "idea", "reality", "record"];

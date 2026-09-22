@@ -6,7 +6,7 @@ import StarField from "@/components/StarField";
 import BottomNav from "@/components/BottomNav";
 import { useLang } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/client";
-import { getProfile, listEntries, uploadAvatar, setProfileAvatar, DbProfile, DbEntry } from "@/lib/supabase/data";
+import { getProfile, listEntries, uploadAvatar, setProfileAvatar, setProfileNickname, cleanNickname, DbProfile, DbEntry } from "@/lib/supabase/data";
 import { computeStats } from "@/lib/stats";
 import { initialsFrom } from "@/lib/format";
 import { isMuted, setMuted, playSignal } from "@/lib/chime";
@@ -19,6 +19,23 @@ const GoogleIcon = ({ s = 12 }: { s?: number }) => (
 export default function ProfilePage() {
   const { t, lang, setLang } = useLang();
   const [profile, setProfile] = useState<DbProfile | null | undefined>(undefined);
+  // The nickname anonymous shares go out under, editable here in advance.
+  const [nickDraft, setNickDraft] = useState("");
+  const [nickState, setNickState] = useState<"idle" | "saving" | "saved">("idle");
+  useEffect(() => { setNickDraft(profile?.nickname ?? ""); }, [profile?.nickname]);
+  const saveNickname = async () => {
+    setNickState("saving");
+    try {
+      await setProfileNickname(nickDraft);
+      const clean = cleanNickname(nickDraft);
+      setProfile((prev) => (prev ? { ...prev, nickname: clean } : prev));
+      setNickDraft(clean ?? "");
+      setNickState("saved");
+      window.setTimeout(() => setNickState("idle"), 1600);
+    } catch {
+      setNickState("idle");
+    }
+  };
   const [entries, setEntries] = useState<DbEntry[]>([]);
   const [uploading, setUploading] = useState(false);
   const [muted, setMutedState] = useState(false);
@@ -175,6 +192,33 @@ export default function ProfilePage() {
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "rgba(236,231,250,0.6)" }}>
               <span>{t("pf.onlyMe")}</span>
             </div>
+          </div>
+          <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "0 16px" }} />
+          {/* Set in advance, or changed any time: the next anonymous share offers it */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 9, padding: "15px 16px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 30, height: 30, flex: "0 0 auto", borderRadius: 9, background: "rgba(154,124,235,0.16)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C9B6F2" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z" /><path d="M3 3l18 18" /></svg>
+              </div>
+              <span style={{ flex: 1, fontSize: 14.5, fontWeight: 500 }}>{t("pf.nickname")}</span>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={nickDraft}
+                onChange={(e) => { setNickDraft(e.target.value.slice(0, 24)); setNickState("idle"); }}
+                placeholder={t("share.nicknamePh")}
+                maxLength={24}
+                style={{ flex: 1, minWidth: 0, padding: "10px 13px", borderRadius: 12, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "inherit", fontSize: 14, font: "inherit" }}
+              />
+              <button
+                onClick={saveNickname}
+                disabled={nickState === "saving" || (cleanNickname(nickDraft) ?? "") === (profile?.nickname ?? "")}
+                style={{ flex: "0 0 auto", padding: "0 16px", borderRadius: 12, border: "1px solid rgba(154,124,235,0.45)", background: "rgba(154,124,235,0.16)", color: "#D9CCFF", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: nickState === "saving" || (cleanNickname(nickDraft) ?? "") === (profile?.nickname ?? "") ? 0.5 : 1 }}
+              >
+                {nickState === "saved" ? t("pf.nicknameSaved") : t("pf.nicknameSave")}
+              </button>
+            </div>
+            <div style={{ fontSize: 11.5, color: "rgba(236,231,250,0.5)", lineHeight: 1.5 }}>{t("share.nicknameNote")}</div>
           </div>
           <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "0 16px" }} />
           <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 16px" }}>

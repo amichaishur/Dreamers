@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import StarField from "@/components/StarField";
@@ -10,7 +10,7 @@ import EntryForm from "@/components/EntryForm";
 import { theme } from "@/lib/theme";
 import { DIARIES, diaryStyle, DiaryKey } from "@/lib/diary";
 import { useLang } from "@/lib/i18n";
-import { createEntry, listEntries, setEntrySharing } from "@/lib/supabase/data";
+import { createEntry, listEntries, setEntrySharing, getProfile } from "@/lib/supabase/data";
 
 const p = theme;
 
@@ -68,6 +68,11 @@ function NewEntryInner() {
   const param = sp.get("diary");
   const fromParam = param && DIARY_KEYS.includes(param as DiaryKey) ? (param as DiaryKey) : null;
   const [selected, setSelected] = useState<DiaryKey | null>(fromParam);
+  // The nickname kept from the last anonymous share, offered again.
+  const [savedNickname, setSavedNickname] = useState<string | null>(null);
+  useEffect(() => {
+    getProfile().then((pr) => setSavedNickname(pr?.nickname ?? null)).catch(() => {});
+  }, []);
 
   // Direct visit without a chosen diary → fall back to the inline picker.
   if (!selected) return <DiaryPickSheet onPick={setSelected} />;
@@ -77,6 +82,7 @@ function NewEntryInner() {
       diaryKey={selected}
       headerKey="ef.newIn"
       submitKey="ef.add"
+      initial={{ nickname: savedNickname }}
       onBack={() => (fromParam ? router.push("/home") : setSelected(null))}
       onSubmit={async (v) => {
         const entry = await createEntry({
@@ -91,7 +97,7 @@ function NewEntryInner() {
           file: v.file,
           created_at: v.createdAt,
         });
-        if (v.shared) await setEntrySharing(entry.id, { shared: true, anonymous: v.anonymous });
+        if (v.shared) await setEntrySharing(entry.id, { shared: true, anonymous: v.anonymous, nickname: v.nickname });
         const all = await listEntries();
         router.push(`/entry/reveal?diary=${selected}&count=${all.length}&id=${entry.id}`
           + (v.shared ? `&shared=1&title=${encodeURIComponent(v.title)}` : ""));

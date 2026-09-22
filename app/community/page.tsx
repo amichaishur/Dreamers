@@ -10,6 +10,7 @@ import { diaryStyle } from "@/lib/diary";
 import { useLang } from "@/lib/i18n";
 import { listSharedEntries, getCommunityStats, listReactionCounts, SharedEntry, CommunityStats, ReactionCounts } from "@/lib/supabase/data";
 import { ReactionIcon, REACTION_COLOR } from "@/components/Reactions";
+import Byline from "@/components/Byline";
 
 const p = theme;
 const TYPES: DiaryType[] = ["reality", "idea", "dream", "creation", "record"];
@@ -40,7 +41,8 @@ export default function CommunityPage() {
     return all.filter((e) => {
       if (filter !== "all" && e.type !== filter) return false;
       if (q) {
-        const who = e.shared_anonymous ? "" : e.author_name ?? "";
+        // A nickname is a public pseudonym, so it is searchable like a name.
+        const who = e.author_name ?? "";
         if (!(`${e.title} ${e.body} ${who}`.toLowerCase().includes(q))) return false;
       }
       return true;
@@ -134,13 +136,12 @@ export default function CommunityPage() {
             const color = p.dots[e.type];
             const s = diaryStyle(color);
             const date = new Date(e.created_at).toLocaleDateString(lang === "en" ? "en-US" : "he-IL", { day: "numeric", month: "short" });
-            const who = e.shared_anonymous ? t("jr.byAnon") : e.author_name ? `${t("jr.by")} ${e.author_name}` : null;
             return (
               <Link key={e.id} href={`/d/${e.id}`} style={{ display: "flex", alignItems: "center", gap: 12, background: p.cardBg, border: `1px solid ${p.cardBorder}`, borderRadius: 16, padding: "13px 14px", textDecoration: "none", color: "inherit" }}>
                 <DiaryHex color={color} w={30} h={32} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.title}</div>
-                  <div style={{ fontSize: 12, color: s.nameColor, marginTop: 2 }}>{t(`diary.${e.type}`)}{who ? ` · ${who}` : ""}</div>
+                  <div style={{ fontSize: 12, color: s.nameColor, marginTop: 2 }}>{t(`diary.${e.type}`)}{(e.author_name || e.shared_anonymous) && <> · <Byline anonymous={e.shared_anonymous} name={e.author_name} color={s.nameColor} /></>}</div>
                   {/* What the community already said back */}
                   {(() => {
                     const c = counts.get(e.id);

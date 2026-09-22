@@ -7,7 +7,7 @@ import EntryForm from "@/components/EntryForm";
 import { theme } from "@/lib/theme";
 import { DiaryKey } from "@/lib/diary";
 import { useLang } from "@/lib/i18n";
-import { getEntry, getSharedEntry, updateEntry, deleteEntry, uploadAttachment, setEntrySharing, DbEntry } from "@/lib/supabase/data";
+import { getEntry, getSharedEntry, getProfile, updateEntry, deleteEntry, uploadAttachment, setEntrySharing, DbEntry } from "@/lib/supabase/data";
 
 const p = theme;
 
@@ -16,6 +16,10 @@ export default function EditEntryPage() {
   const router = useRouter();
   const { t } = useLang();
   const [entry, setEntry] = useState<DbEntry | null | undefined>(undefined);
+  const [savedNickname, setSavedNickname] = useState<string | null>(null);
+  useEffect(() => {
+    getProfile().then((pr) => setSavedNickname(pr?.nickname ?? null)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -58,7 +62,7 @@ export default function EditEntryPage() {
       diaryKey={entry.type as DiaryKey}
       headerKey="ef.editIn"
       submitKey="ef.save"
-      initial={{ title: entry.title, body: entry.body, lucidity: entry.lucidity, awareness: entry.awareness, kind: entry.kind, meta: entry.meta, shared: entry.visibility === "public", anonymous: entry.shared_anonymous, createdAt: entry.created_at }}
+      initial={{ title: entry.title, body: entry.body, lucidity: entry.lucidity, awareness: entry.awareness, kind: entry.kind, meta: entry.meta, shared: entry.visibility === "public", anonymous: entry.shared_anonymous, nickname: entry.shared_anonymous ? (entry.shared_nickname ?? null) : savedNickname, createdAt: entry.created_at }}
       existingMediaName={existingMediaName}
       entryId={entry.id}
       onBack={() => router.push("/journals")}
@@ -85,7 +89,7 @@ export default function EditEntryPage() {
           ...(media_url !== undefined ? { media_url } : {}),
         });
         // Reconcile sharing (also refreshes the shared image URL if the file changed).
-        await setEntrySharing(entry.id, { shared: v.shared, anonymous: v.anonymous });
+        await setEntrySharing(entry.id, { shared: v.shared, anonymous: v.anonymous, nickname: v.nickname });
         router.push("/journals");
         router.refresh();
       }}

@@ -64,6 +64,10 @@ create table if not exists public.entries (
 alter table public.entries add column if not exists awareness text;
 alter table public.entries add column if not exists kind text;
 alter table public.entries add column if not exists meta jsonb not null default '{}'::jsonb;
+-- Anonymous sharing under a chosen name: the default kept on the profile, and the
+-- one each memory was actually shared under (so renaming never relinks old posts).
+alter table public.profiles add column if not exists nickname text;
+alter table public.entries  add column if not exists shared_nickname text;
 
 create table if not exists public.entry_versions (
   id         uuid primary key default gen_random_uuid(),
@@ -293,7 +297,8 @@ returns table (
 language sql security definer stable set search_path = public as $$
   select e.id, e.type, e.title, e.body, e.lucidity,
          e.shared_media_url, e.created_at, e.shared_anonymous,
-         case when e.shared_anonymous then null else p.display_name end,
+         case when e.shared_anonymous then nullif(btrim(e.shared_nickname), '')
+              else p.display_name end,
          e.kind, e.awareness, e.meta
   from public.entries e
   left join public.profiles p on p.id = e.user_id
@@ -315,7 +320,8 @@ returns table (
 language sql security definer stable set search_path = public as $$
   select e.id, e.type, e.title, e.body, e.lucidity,
          e.shared_media_url, e.created_at, e.shared_anonymous,
-         case when e.shared_anonymous then null else p.display_name end,
+         case when e.shared_anonymous then nullif(btrim(e.shared_nickname), '')
+              else p.display_name end,
          e.kind, e.awareness, e.meta
   from public.entries e
   left join public.profiles p on p.id = e.user_id
@@ -361,11 +367,19 @@ grant execute on function public.consciousness_dots() to authenticated;
 -- Everyone's responses to one shared memory, with the responder's name.
 -- Members only, and only for memories actually shared with the community.
 create or replace function public.list_reactions(p_entry uuid)
-returns table (id uuid, kind text, body text, created_at timestamptz, author_name text, mine boolean)
+returns table (
+  id uuid, kind text, body text, created_at timestamptz, author_name text,
+  mine boolean, anon_author boolean
+)
 language sql security definer stable set search_path = public as $$
+  -- On an anonymous memory the author's own replies carry the nickname, never
+  -- the real name: answering your own dream must not tell the thread who you are.
   select r.id, r.kind, r.body, r.created_at,
-         coalesce(p.display_name, split_part(p.email, '@', 1)),
-         (r.user_id = auth.uid())
+         case when e.shared_anonymous and r.user_id = e.user_id
+              then nullif(btrim(e.shared_nickname), '')
+              else coalesce(p.display_name, split_part(p.email, '@', 1)) end,
+         (r.user_id = auth.uid()),
+         (e.shared_anonymous and r.user_id = e.user_id)
   from public.entry_reactions r
   join public.entries e on e.id = r.entry_id
   left join public.profiles p on p.id = r.user_id

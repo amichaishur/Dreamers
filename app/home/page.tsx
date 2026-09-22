@@ -14,6 +14,7 @@ import { initialsFrom } from "@/lib/format";
 import { WeaveItem, computeEdges } from "@/lib/weave";
 import { REACTION_COLOR } from "@/components/Reactions";
 import type { Satellite } from "@/components/WeaveKnowledge";
+import Byline from "@/components/Byline";
 
 // The weave renders one dot per memory, 1:1 with the number shown, up to this cap.
 // Beyond it (a very large community) it samples down while always keeping your own,
@@ -103,10 +104,10 @@ export default function HomePage() {
     return [...mine, ...known, ...anon];
   }, [mineMode, own, nodes, shared]);
 
-  // Who shared what, for the card. Null means they shared it anonymously.
+  // Who shared what, for the card, and whether that name is a nickname.
   const authorOf = useMemo(() => {
-    const m = new Map<string, string | null>();
-    shared.forEach((s) => m.set(s.id, s.author_name));
+    const m = new Map<string, { name: string | null; anonymous: boolean }>();
+    shared.forEach((s) => m.set(s.id, { name: s.author_name, anonymous: s.shared_anonymous }));
     return m;
   }, [shared]);
 
@@ -124,7 +125,8 @@ export default function HomePage() {
       .then((rows) => {
         if (!alive) return;
         setSats(rows.map((r) => ({
-          name: r.author_name ?? t("rx.someone"),
+          // The author answering their own anonymous memory is never named.
+          name: r.author_name ?? (r.anon_author ? t("rx.theAuthor") : t("rx.someone")),
           when: new Date(r.created_at).toLocaleDateString(lang === "en" ? "en-US" : "he-IL", { day: "numeric", month: "numeric" }),
           kind: t(`rx.${r.kind}`),
           color: REACTION_COLOR[r.kind],
@@ -273,9 +275,10 @@ export default function HomePage() {
                   {!items[sel].mine && (
                     <span style={{ fontSize: 11.5, fontWeight: 500, color: p.subtext }}>
                       {"  ·  "}
-                      {authorOf.get(items[sel].id)
-                        ? `${t("jr.by")} ${authorOf.get(items[sel].id)}`
-                        : t("jr.byAnon")}
+                      <Byline
+                        anonymous={authorOf.get(items[sel].id)?.anonymous ?? true}
+                        name={authorOf.get(items[sel].id)?.name ?? null}
+                      />
                     </span>
                   )}
                 </Link>

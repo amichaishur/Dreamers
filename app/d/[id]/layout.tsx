@@ -39,7 +39,9 @@ export async function generateMetadata(
       reality: "מציאות", record: "סמלים ועוגנים",
     };
     const what = KIND[e.type ?? "dream"] ?? "זיכרון";
-    const by = e.shared_anonymous || !e.author_name ? "" : ` · מאת ${e.author_name}`;
+    // A real name reads "by"; a nickname reads "under the nickname", so a preview
+    // can never present a pseudonym as someone's actual name.
+    const by = !e.author_name ? "" : e.shared_anonymous ? ` · בכינוי ${e.author_name}` : ` · מאת ${e.author_name}`;
     const description = `${what} מתוך מארג החיים${by}`;
     return {
       title: `${e.title} · Dreamers`,
