@@ -81,7 +81,15 @@ export default function SharedDreamPage() {
           <div style={{ width: 40, height: 40, flex: "0 0 auto", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff", background: "linear-gradient(135deg,#6E8BFF,#9A6CFF)" }}>{authorInitials}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 11.5, color: p.subtext }}>{t("sd.sharedBy")}</div>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>{authorLabel}</div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>
+              {authorLabel}
+              {/* A nickname is marked as one, so it cannot pass for a member's real name */}
+              {e.shared_anonymous && name && (
+                <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 7px", marginInlineStart: 7, borderRadius: 6, background: "rgba(154,124,235,0.18)", color: "#C9B6F2", verticalAlign: "middle" }}>
+                  {t("jr.nickTag")}
+                </span>
+              )}
+            </div>
           </div>
           <DiaryHex color={d.color} />
         </div>

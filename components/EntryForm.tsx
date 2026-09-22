@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import StarField from "@/components/StarField";
 import DiaryHex from "@/components/DiaryHex";
 import { theme } from "@/lib/theme";
@@ -22,6 +22,8 @@ export type EntryFormValues = {
   removeExisting: boolean;
   shared: boolean;
   anonymous: boolean;
+  /** The name an anonymous share goes out under; empty means none. */
+  nickname: string;
   createdAt: string; // ISO, editable (defaults to now)
 };
 
@@ -58,7 +60,7 @@ export default function EntryForm({
   entryId,
 }: {
   diaryKey: DiaryKey;
-  initial?: { title?: string; body?: string; lucidity?: Lucidity | null; awareness?: Lucidity | null; kind?: EntryKind; meta?: EntryMeta; shared?: boolean; anonymous?: boolean; createdAt?: string };
+  initial?: { title?: string; body?: string; lucidity?: Lucidity | null; awareness?: Lucidity | null; kind?: EntryKind; meta?: EntryMeta; shared?: boolean; anonymous?: boolean; nickname?: string | null; createdAt?: string };
   existingMediaName?: string | null;
   headerKey: string; // e.g. "ef.newIn" or "ef.editIn"
   submitKey: string; // e.g. "ef.add" or "ef.save"
@@ -89,6 +91,13 @@ export default function EntryForm({
   const [removeExisting, setRemoveExisting] = useState(false);
   const [shared, setShared] = useState(initial?.shared ?? false);
   const [anonymous, setAnonymous] = useState(initial?.anonymous ?? false);
+  const [nickname, setNickname] = useState(initial?.nickname ?? "");
+  // The saved nickname may arrive after the form has drawn (the profile loads on
+  // its own). Take it then, unless the person has already started typing.
+  const nickTouched = useRef(false);
+  useEffect(() => {
+    if (!nickTouched.current && initial?.nickname) setNickname(initial.nickname);
+  }, [initial?.nickname]);
   const initDate = initial?.createdAt ? new Date(initial.createdAt) : new Date();
   const [dateStr, setDateStr] = useState(toDateStr(initDate));
   const [timeStr, setTimeStr] = useState(toTimeStr(initDate));
@@ -184,7 +193,7 @@ export default function EntryForm({
     const createdAt = new Date(`${dateStr}T${timeStr || "00:00"}`).toISOString();
     const meta: EntryMeta = isSymbols ? { symbolType, symbolWhere, symbolReturn } : {};
     try {
-      await onSubmit({ title: title.trim(), body: body.trim(), lucidity, awareness, kind, meta, file, removeExisting, shared, anonymous, createdAt });
+      await onSubmit({ title: title.trim(), body: body.trim(), lucidity, awareness, kind, meta, file, removeExisting, shared, anonymous, nickname, createdAt });
     } catch {
       setError(t("ef.error"));
       setSaving(false);
@@ -387,6 +396,21 @@ export default function EntryForm({
               <div style={{ display: "flex", gap: 9 }}>
                 <button style={chip(!anonymous)} onClick={() => setAnonymous(false)}>{t("share.withName")}</button>
                 <button style={chip(anonymous)} onClick={() => setAnonymous(true)}>{t("share.anonymous")}</button>
+              </div>
+            )}
+            {/* Only anonymous shares show a name that is not yours, so only they
+                ask for one. Optional: left empty, it reads "shared anonymously". */}
+            {shared && anonymous && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={label}>{t("share.nickname")}</div>
+                <input
+                  value={nickname}
+                  onChange={(e) => { nickTouched.current = true; setNickname(e.target.value.slice(0, 24)); }}
+                  placeholder={t("share.nicknamePh")}
+                  maxLength={24}
+                  style={field}
+                />
+                <div style={{ fontSize: 11.5, color: p.subtext, lineHeight: 1.5 }}>{t("share.nicknameNote")}</div>
               </div>
             )}
             {/* Sending the dream out of the weave. Only once it is actually

@@ -177,7 +177,16 @@ export default function Reactions({ entryId, accent, onChanged }: { entryId: str
                 {initialsFrom(r.author_name, r.author_name ?? "?")}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: p.text }}>{r.author_name ?? t("rx.someone")}</span>
+                {/* On an anonymous memory the author's reply shows the nickname
+                    (marked as one) or "the author", never their real name. */}
+                <span style={{ fontSize: 13, fontWeight: 700, color: p.text }}>
+                  {r.author_name ?? (r.anon_author ? t("rx.theAuthor") : t("rx.someone"))}
+                </span>
+                {r.anon_author && r.author_name && (
+                  <span style={{ fontSize: 10.5, fontWeight: 600, padding: "0 6px", marginInlineStart: 5, borderRadius: 6, background: "rgba(154,124,235,0.18)", color: "#C9B6F2" }}>
+                    {t("jr.nickTag")}
+                  </span>
+                )}
                 <span style={{ fontSize: 13, color: p.text, opacity: 0.86 }}> {r.body}</span>
                 {/* What I said stays mine to change or take back */}
                 {r.mine && (
