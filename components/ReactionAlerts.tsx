@@ -7,7 +7,7 @@ import { diaryStyle } from "@/lib/diary";
 import { useLang } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/client";
 import { listInbox, InboxItem, demoEnabled } from "@/lib/supabase/data";
-import { playSignal, isMuted } from "@/lib/chime";
+import { playSignal, isMuted, armChime } from "@/lib/chime";
 import { initialsFrom } from "@/lib/format";
 
 const p = theme;
@@ -43,6 +43,11 @@ export default function ReactionAlerts() {
     window.addEventListener("dreamers:preview-alert", preview);
     return () => window.removeEventListener("dreamers:preview-alert", preview);
   }, []);
+
+  // Audio is blocked until the person touches the page, and an answer arriving
+  // is not a touch. Arm it here, once, so the first tap anywhere in the app
+  // wakes the sound for every notification that follows.
+  useEffect(() => { armChime(); }, []);
 
   useEffect(() => {
     let alive = true;
